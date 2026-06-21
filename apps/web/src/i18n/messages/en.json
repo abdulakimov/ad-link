@@ -11,7 +11,16 @@
     "signIn": "Sign in",
     "signingIn": "Signing in…",
     "invalid": "Invalid email or password.",
-    "logout": "Log out"
+    "logout": "Log out",
+    "registerTitle": "Create your workspace",
+    "registerSubtitle": "Start measuring real ad revenue.",
+    "workspace": "Workspace name",
+    "name": "Your name",
+    "createAccount": "Create account",
+    "creating": "Creating…",
+    "haveAccount": "Already have an account?",
+    "noAccount": "No account?",
+    "signUp": "Sign up"
   },
   "overview": {
     "title": "Overview",

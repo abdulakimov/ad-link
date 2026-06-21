@@ -11,7 +11,16 @@
     "signIn": "Kirish",
     "signingIn": "Kirilmoqda…",
     "invalid": "Email yoki parol noto'g'ri.",
-    "logout": "Chiqish"
+    "logout": "Chiqish",
+    "registerTitle": "Ish maydoni yarating",
+    "registerSubtitle": "Reklamadan haqiqiy daromadni o'lchashni boshlang.",
+    "workspace": "Ish maydoni nomi",
+    "name": "Ismingiz",
+    "createAccount": "Akkaunt yaratish",
+    "creating": "Yaratilmoqda…",
+    "haveAccount": "Akkauntingiz bormi?",
+    "noAccount": "Akkaunt yo'qmi?",
+    "signUp": "Ro'yxatdan o'tish"
   },
   "overview": {
     "title": "Umumiy ko'rinish",

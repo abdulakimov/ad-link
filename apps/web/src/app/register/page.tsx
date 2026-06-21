@@ -19,69 +19,71 @@ import { Label } from '@/components/ui/label';
 import { ApiError, api } from '@/lib/api';
 import { setToken } from '@/lib/session';
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const t = useT();
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [form, setForm] = useState({ tenantName: '', name: '', email: '', password: '' });
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      const { token } = await api.login(email, password);
+      const { token } = await api.register(form);
       setToken(token);
       router.push('/overview');
     } catch (err) {
-      const message =
-        err instanceof ApiError && err.status === 401 ? t('auth.invalid') : (err as Error).message;
-      toast.error(message);
+      toast.error(err instanceof ApiError ? err.message : (err as Error).message);
     } finally {
       setLoading(false);
     }
   }
 
+  const set = (k: keyof typeof form) => (e: { target: { value: string } }) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
   return (
     <main className="flex min-h-dvh items-center justify-center px-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{t('auth.signInTitle')}</CardTitle>
-          <CardDescription>{t('auth.signInSubtitle')}</CardDescription>
+          <CardTitle>{t('auth.registerTitle')}</CardTitle>
+          <CardDescription>{t('auth.registerSubtitle')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
+              <Label htmlFor="tenantName">{t('auth.workspace')}</Label>
+              <Input id="tenantName" required value={form.tenantName} onChange={set('tenantName')} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">{t('auth.name')}</Label>
+              <Input id="name" value={form.name} onChange={set('name')} />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="email">{t('auth.email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <Input id="email" type="email" autoComplete="email" required value={form.email} onChange={set('email')} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">{t('auth.password')}</Label>
               <Input
                 id="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
+                value={form.password}
+                onChange={set('password')}
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? t('auth.signingIn') : t('auth.signIn')}
+              {loading ? t('auth.creating') : t('auth.createAccount')}
             </Button>
           </form>
         </CardContent>
         <CardFooter className="justify-center text-sm text-muted-foreground">
-          {t('auth.noAccount')}
-          <Link href="/register" className="ml-1 font-medium text-primary hover:underline">
-            {t('auth.signUp')}
+          {t('auth.haveAccount')}
+          <Link href="/login" className="ml-1 font-medium text-primary hover:underline">
+            {t('auth.signIn')}
           </Link>
         </CardFooter>
       </Card>

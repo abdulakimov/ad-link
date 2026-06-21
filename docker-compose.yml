@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: adlink-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: adlink
+      POSTGRES_PASSWORD: adlink
+      POSTGRES_DB: adlink
+    ports:
+      # host 5435 → avoids clashing with a local/other postgres on 5432/5433
+      - '5435:5432'
+    volumes:
+      - adlink_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U adlink']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: adlink-redis
+    restart: unless-stopped
+    ports:
+      # host 6380 → avoids clashing with a local/other redis on 6379
+      - '6380:6379'
+    volumes:
+      - adlink_redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  adlink_pg:
+  adlink_redis:

@@ -1,0 +1,22 @@
+{
+  "app": {
+    "name": "AdLink",
+    "tagline": "Reklama xarajati haqiqiy daromad bilan uchrashadi."
+  },
+  "auth": {
+    "signInTitle": "Kirish",
+    "signInSubtitle": "Xush kelibsiz — ish maydoningizga kiring.",
+    "email": "Email",
+    "password": "Parol",
+    "signIn": "Kirish",
+    "signingIn": "Kirilmoqda…",
+    "invalid": "Email yoki parol noto'g'ri.",
+    "logout": "Chiqish"
+  },
+  "overview": {
+    "title": "Umumiy ko'rinish",
+    "welcome": "Xush kelibsiz, {name}",
+    "role": "Rol",
+    "tenant": "Ish maydoni"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "app": {
+    "name": "AdLink",
+    "tagline": "Ad spend, meet real revenue."
+  },
+  "auth": {
+    "signInTitle": "Sign in",
+    "signInSubtitle": "Welcome back — sign in to your workspace.",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "invalid": "Invalid email or password.",
+    "logout": "Log out"
+  },
+  "overview": {
+    "title": "Overview",
+    "welcome": "Welcome, {name}",
+    "role": "Role",
+    "tenant": "Workspace"
+  }
+}

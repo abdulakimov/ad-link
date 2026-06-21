@@ -1,0 +1,25 @@
+{
+  "name": "adlink",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.6.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "db:generate": "pnpm --filter @adlink/db generate",
+    "db:migrate": "pnpm --filter @adlink/db migrate",
+    "db:seed": "pnpm --filter @adlink/db seed",
+    "dev:api": "pnpm --filter @adlink/api start:dev",
+    "dev:web": "pnpm --filter @adlink/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}

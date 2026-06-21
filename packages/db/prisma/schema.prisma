@@ -1,0 +1,433 @@
+// AdLink canonical schema (PLAN.md §3).
+// Every tenant-scoped table carries tenantId and is indexed on it.
+// All external-id upserts are unique to guarantee idempotent re-sync.
+// Money = amount + currency; conversion via FxRate, never stored pre-mixed.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- enums ----------
+enum Role {
+  OWNER
+  ADMIN
+  BUYER
+  CLIENT
+}
+
+enum AdProvider {
+  META
+  GOOGLE
+  TIKTOK
+}
+
+enum CrmProvider {
+  BITRIX24
+  AMOCRM
+  HUBSPOT
+  SALESFORCE
+}
+
+enum CanonicalStatus {
+  LEAD
+  QUALIFIED
+  WON
+  LOST
+  IGNORE
+}
+
+enum LeadSource {
+  META_LEAD_AD
+  WEBSITE
+  DM
+  CRM
+}
+
+enum IdentifierType {
+  PHONE
+  EMAIL
+}
+
+enum TouchType {
+  IMPRESSION
+  CLICK
+  LEAD
+}
+
+enum MatchMethod {
+  LEADGEN_ID
+  FBCLID
+  PHONE
+  EMAIL
+  UTM
+  FUZZY
+  MANUAL
+}
+
+enum MatchStatus {
+  MATCHED
+  UNMATCHED
+  REVIEW
+  REJECTED
+}
+
+enum AttributionModel {
+  FIRST_TOUCH
+  LAST_TOUCH
+  LINEAR
+  TIME_DECAY
+  POSITION
+}
+
+enum ConversionType {
+  LEAD
+  QUALIFIED_LEAD
+  PURCHASE
+}
+
+enum ConversionState {
+  PENDING
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+enum SyncState {
+  OK
+  RUNNING
+  FAILED
+}
+
+// ---------- tenancy ----------
+model Tenant {
+  id             String   @id @default(cuid())
+  name           String
+  reportCurrency String   @default("USD")
+  defaultModel   AttributionModel @default(LAST_TOUCH)
+  lookbackDays   Int      @default(30)
+  createdAt      DateTime @default(now())
+  users          User[]
+  clients        Client[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         Role     @default(BUYER)
+  clientId     String? // CLIENT role is scoped to one client
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model Client {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name           String
+  createdAt      DateTime        @default(now())
+  adAccounts     AdAccount[]
+  crmConnections CrmConnection[]
+
+  @@index([tenantId])
+}
+
+// ---------- connections ----------
+model AdAccount {
+  id            String     @id @default(cuid())
+  tenantId      String
+  clientId      String
+  client        Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  provider      AdProvider @default(META)
+  externalId    String // act_<id>
+  name          String?
+  currency      String
+  timezone      String
+  tokenRef      String // pointer into the secrets vault
+  feedbackOptIn Boolean    @default(false)
+  lastSyncAt    DateTime?
+  syncState     SyncState  @default(OK)
+  createdAt     DateTime   @default(now())
+  campaigns     Campaign[]
+
+  @@unique([provider, externalId])
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+model CrmConnection {
+  id                   String         @id @default(cuid())
+  tenantId             String
+  clientId             String
+  client               Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  provider             CrmProvider
+  externalRef          String // portal/base url or account id
+  authRef              String // secrets vault pointer
+  revenueField         String?
+  revenueCurrencyField String?
+  lastSyncAt           DateTime?
+  syncState            SyncState      @default(OK)
+  createdAt            DateTime       @default(now())
+  stageMappings        StageMapping[]
+
+  @@unique([provider, externalRef])
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+model StageMapping {
+  id                String          @id @default(cuid())
+  tenantId          String
+  crmConnectionId   String
+  crm               CrmConnection   @relation(fields: [crmConnectionId], references: [id], onDelete: Cascade)
+  externalStageId   String
+  externalStageName String
+  canonical         CanonicalStatus
+
+  @@unique([crmConnectionId, externalStageId])
+  @@index([tenantId])
+}
+
+// ---------- ad hierarchy ----------
+model Campaign {
+  id          String    @id @default(cuid())
+  tenantId    String
+  adAccountId String
+  adAccount   AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  externalId  String
+  name        String
+  status      String?
+  adSets      AdSet[]
+
+  @@unique([adAccountId, externalId])
+  @@index([tenantId])
+}
+
+model AdSet {
+  id         String   @id @default(cuid())
+  tenantId   String
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  externalId String
+  name       String
+  status     String?
+  ads        Ad[]
+
+  @@unique([campaignId, externalId])
+  @@index([tenantId])
+}
+
+model Ad {
+  id          String           @id @default(cuid())
+  tenantId    String
+  adSetId     String
+  adSet       AdSet            @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  externalId  String
+  name        String
+  status      String?
+  creativeId  String?
+  creative    Creative?        @relation(fields: [creativeId], references: [id])
+  insights    AdInsightDaily[]
+  leads       Lead[]
+  touchPoints TouchPoint[]
+
+  @@unique([adSetId, externalId])
+  @@index([tenantId])
+}
+
+model Creative {
+  id         String   @id @default(cuid())
+  tenantId   String
+  externalId String?
+  name       String?
+  // parsed from naming convention (e.g. Vid1-h1-c1)
+  video      String?
+  hook       String?
+  concept    String?
+  angle      String?
+  format     String?
+  audience   String?
+  tags       String[]
+  ads        Ad[]
+
+  @@index([tenantId])
+}
+
+model AdInsightDaily {
+  id          String   @id @default(cuid())
+  tenantId    String
+  adId        String
+  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date // in the ad-account timezone
+  spend       Decimal  @db.Decimal(18, 6)
+  currency    String
+  impressions Int
+  clicks      Int
+  reach       Int?
+  frequency   Decimal? @db.Decimal(10, 4)
+
+  @@unique([adId, date])
+  @@index([tenantId])
+  @@index([date])
+}
+
+// ---------- identity / outcomes ----------
+model Contact {
+  id          String              @id @default(cuid())
+  tenantId    String
+  name        String?
+  identifiers ContactIdentifier[]
+  leads       Lead[]
+  deals       Deal[]
+
+  @@index([tenantId])
+}
+
+model ContactIdentifier {
+  id         String         @id @default(cuid())
+  tenantId   String
+  contactId  String
+  contact    Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  type       IdentifierType
+  normalized String // E.164 phone OR lowercased email
+  hash       String // sha256(normalized) for Meta CAPI user_data
+
+  @@unique([tenantId, type, normalized])
+  @@index([normalized])
+  @@index([tenantId])
+}
+
+model Lead {
+  id          String       @id @default(cuid())
+  tenantId    String
+  contactId   String?
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  source      LeadSource
+  externalId  String? // CRM lead id
+  leadgenId   String? // Meta lead form id (deterministic)
+  fbclid      String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  createdAt   DateTime
+  // attribution edge
+  adId        String?
+  ad          Ad?          @relation(fields: [adId], references: [id])
+  matchMethod MatchMethod?
+  matchStatus MatchStatus  @default(UNMATCHED)
+  confidence  Float?
+  deals       Deal[]
+  touchPoints TouchPoint[]
+
+  @@unique([tenantId, source, externalId])
+  @@index([tenantId])
+  @@index([leadgenId])
+  @@index([fbclid])
+  @@index([matchStatus])
+}
+
+model Deal {
+  id              String          @id @default(cuid())
+  tenantId        String
+  contactId       String?
+  contact         Contact?        @relation(fields: [contactId], references: [id])
+  leadId          String?
+  lead            Lead?           @relation(fields: [leadId], references: [id])
+  externalId      String
+  stageExternalId String
+  canonical       CanonicalStatus
+  amount          Decimal?        @db.Decimal(18, 2)
+  currency        String?
+  createdAt       DateTime
+  wonAt           DateTime?
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId])
+  @@index([canonical])
+}
+
+model TouchPoint {
+  id         String    @id @default(cuid())
+  tenantId   String
+  contactId  String?
+  leadId     String?
+  lead       Lead?     @relation(fields: [leadId], references: [id])
+  adId       String?
+  ad         Ad?       @relation(fields: [adId], references: [id])
+  type       TouchType
+  occurredAt DateTime
+  isFirst    Boolean   @default(false)
+  isLast     Boolean   @default(false)
+
+  @@index([tenantId])
+  @@index([contactId])
+  @@index([occurredAt])
+}
+
+model ConversionEvent {
+  id          String          @id @default(cuid())
+  tenantId    String
+  adAccountId String
+  type        ConversionType
+  eventId     String          @unique // stable dedup id sent to Meta
+  leadgenId   String?
+  value       Decimal?        @db.Decimal(18, 2)
+  currency    String?
+  state       ConversionState @default(PENDING)
+  response    Json? // accepted/rejected payload for audit
+  sentAt      DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@index([tenantId])
+  @@index([state])
+}
+
+model MatchAudit {
+  id         String      @id @default(cuid())
+  tenantId   String
+  leadId     String
+  method     MatchMethod
+  confidence Float
+  resolvedBy String // "engine" | userId
+  detail     Json
+  createdAt  DateTime    @default(now())
+
+  @@index([tenantId])
+  @@index([leadId])
+}
+
+model FxRate {
+  id    String   @id @default(cuid())
+  base  String
+  quote String
+  date  DateTime @db.Date
+  rate  Decimal  @db.Decimal(18, 8)
+
+  @@unique([base, quote, date])
+}
+
+model SyncRun {
+  id          String    @id @default(cuid())
+  tenantId    String
+  kind        String // "meta_insights" | "bitrix_deals" | ...
+  state       SyncState
+  windowStart DateTime?
+  windowEnd   DateTime?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  error       String?
+
+  @@index([tenantId])
+  @@index([kind])
+}

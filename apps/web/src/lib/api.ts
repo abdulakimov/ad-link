@@ -70,6 +70,25 @@ export interface ConnectBitrixInput {
   webhookUrl: string;
 }
 
+export interface ConnectAmoInput {
+  clientId: string;
+  baseUrl: string;
+  accessToken: string;
+}
+
+export type CanonicalStatus = 'LEAD' | 'QUALIFIED' | 'WON' | 'LOST' | 'IGNORE';
+
+export interface Stage {
+  externalId: string;
+  name: string;
+}
+
+export interface StageMappingRow {
+  externalStageId: string;
+  externalStageName: string;
+  canonical: CanonicalStatus;
+}
+
 export interface AdAccountDto {
   id: string;
   name: string | null;
@@ -77,6 +96,7 @@ export interface AdAccountDto {
   currency: string;
   syncState: string;
   feedbackOptIn: boolean;
+  lastSyncAt: string | null;
 }
 
 export interface CrmConnectionDto {
@@ -173,8 +193,25 @@ export const api = {
   listAdAccounts: (token: string) => request<AdAccountDto[]>('/ad-accounts', { token }),
   syncAdAccount: (token: string, id: string) =>
     request(`/ad-accounts/${id}/sync`, { method: 'POST', token }),
+  connectAmocrm: (token: string, input: ConnectAmoInput) =>
+    request('/integrations/crm/amocrm/connect', { method: 'POST', token, body: JSON.stringify(input) }),
   listCrm: (token: string) => request<CrmConnectionDto[]>('/crm', { token }),
   syncCrm: (token: string, id: string) => request(`/crm/${id}/sync`, { method: 'POST', token }),
+  setFeedback: (token: string, id: string, optIn: boolean) =>
+    request<AdAccountDto>(`/ad-accounts/${id}/feedback`, {
+      method: 'PUT',
+      token,
+      body: JSON.stringify({ optIn }),
+    }),
+  crmStages: (token: string, id: string) => request<Stage[]>(`/crm/${id}/stages`, { token }),
+  crmMappings: (token: string, id: string) =>
+    request<StageMappingRow[]>(`/crm/${id}/stage-mappings`, { token }),
+  setCrmMappings: (token: string, id: string, mappings: StageMappingRow[]) =>
+    request<StageMappingRow[]>(`/crm/${id}/stage-mappings`, {
+      method: 'PUT',
+      token,
+      body: JSON.stringify({ mappings }),
+    }),
   recommendations: (token: string) =>
     request<{ currency: string; recommendations: Recommendation[] }>('/recommendations', { token }),
   dataTrust: (token: string) => request<MatchRate>('/data-trust', { token }),

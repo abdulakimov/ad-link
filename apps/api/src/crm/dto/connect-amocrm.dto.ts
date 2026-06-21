@@ -1,8 +1,9 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class ConnectAmocrmDto {
+  @IsOptional()
   @IsString()
-  clientId!: string;
+  clientId?: string;
 
   /** Account base URL, e.g. https://acme.amocrm.ru */
   @IsString()

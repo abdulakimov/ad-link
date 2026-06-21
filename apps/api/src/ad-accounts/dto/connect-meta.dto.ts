@@ -1,8 +1,9 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class ConnectMetaDto {
+  @IsOptional()
   @IsString()
-  clientId!: string;
+  clientId?: string;
 
   /** act_<id> */
   @IsString()

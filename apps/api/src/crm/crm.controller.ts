@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@adlink/core';
 import { Roles } from '../common/rbac/roles.decorator.js';
@@ -50,5 +50,11 @@ export class CrmController {
   @Post('crm/:id/sync')
   sync(@Param('id') id: string) {
     return this.svc.triggerSync(id);
+  }
+
+  @Roles(Role.OWNER, Role.ADMIN)
+  @Delete('crm/:id')
+  remove(@Param('id') id: string) {
+    return this.svc.remove(id);
   }
 }

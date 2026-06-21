@@ -1,21 +1,13 @@
 'use client';
 
-import Link from 'next/link';
+import { Lock, Mail } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { AuthField, AuthShell, AuthSwitch } from '@/components/auth/auth-shell';
+import { SocialAuth } from '@/components/auth/social-auth';
 import { useT } from '@/components/i18n-provider';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ApiError, api } from '@/lib/api';
 import { setToken } from '@/lib/session';
 
@@ -25,6 +17,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Surface social-login failures bounced back here by the API (?error=google|telegram|social).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('error')) {
+      toast.error(t('auth.socialFailed'));
+      router.replace('/login');
+    }
+  }, [router, t]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -43,48 +43,43 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center px-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>{t('auth.signInTitle')}</CardTitle>
-          <CardDescription>{t('auth.signInSubtitle')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">{t('auth.email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{t('auth.password')}</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? t('auth.signingIn') : t('auth.signIn')}
-            </Button>
-          </form>
-        </CardContent>
-        <CardFooter className="justify-center text-sm text-muted-foreground">
-          {t('auth.noAccount')}
-          <Link href="/register" className="ml-1 font-medium text-primary hover:underline">
-            {t('auth.signUp')}
-          </Link>
-        </CardFooter>
-      </Card>
-    </main>
+    <AuthShell>
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">{t('auth.signInTitle')}</h1>
+        <p className="text-sm text-muted-foreground">{t('auth.signInSubtitle')}</p>
+      </div>
+
+      <form onSubmit={onSubmit} className="mt-8 space-y-4">
+        <AuthField
+          id="email"
+          label={t('auth.email')}
+          icon={Mail}
+          type="email"
+          autoComplete="email"
+          placeholder="you@company.com"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <AuthField
+          id="password"
+          label={t('auth.password')}
+          icon={Lock}
+          type="password"
+          autoComplete="current-password"
+          placeholder="••••••••"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <Button type="submit" size="lg" className="w-full" disabled={loading}>
+          {loading ? t('auth.signingIn') : t('auth.signIn')}
+        </Button>
+      </form>
+
+      <SocialAuth />
+
+      <AuthSwitch prompt={t('auth.noAccount')} href="/register" action={t('auth.signUp')} />
+    </AuthShell>
   );
 }

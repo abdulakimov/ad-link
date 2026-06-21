@@ -40,6 +40,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+  avatarUrl: string | null;
   role: string;
   tenantId: string;
   clientId: string | null;
@@ -56,7 +57,7 @@ export interface Client {
 }
 
 export interface ConnectMetaInput {
-  clientId: string;
+  clientId?: string;
   externalId: string;
   name: string;
   currency: string;
@@ -65,13 +66,13 @@ export interface ConnectMetaInput {
 }
 
 export interface ConnectBitrixInput {
-  clientId: string;
+  clientId?: string;
   portal: string;
   webhookUrl: string;
 }
 
 export interface ConnectAmoInput {
-  clientId: string;
+  clientId?: string;
   baseUrl: string;
   accessToken: string;
 }
@@ -186,17 +187,34 @@ export const api = {
   listClients: (token: string) => request<Client[]>('/clients', { token }),
   createClient: (token: string, name: string) =>
     request<Client>('/clients', { method: 'POST', token, body: JSON.stringify({ name }) }),
+  deleteClient: (token: string, id: string) =>
+    request<{ ok: boolean }>(`/clients/${id}`, { method: 'DELETE', token }),
   connectMeta: (token: string, input: ConnectMetaInput) =>
     request('/integrations/meta/connect', { method: 'POST', token, body: JSON.stringify(input) }),
   connectBitrix: (token: string, input: ConnectBitrixInput) =>
     request('/integrations/crm/bitrix24/connect', { method: 'POST', token, body: JSON.stringify(input) }),
   listAdAccounts: (token: string) => request<AdAccountDto[]>('/ad-accounts', { token }),
+  metaSessionAccounts: (token: string, sessionId: string) =>
+    request<{ accounts: Array<{ externalId: string; name: string | null; currency: string }> }>(
+      `/integrations/meta/oauth/session/${sessionId}`,
+      { token },
+    ),
+  importMeta: (token: string, sessionId: string, externalIds: string[]) =>
+    request<{ imported: number }>('/integrations/meta/import', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ sessionId, externalIds }),
+    }),
   syncAdAccount: (token: string, id: string) =>
     request(`/ad-accounts/${id}/sync`, { method: 'POST', token }),
+  deleteAdAccount: (token: string, id: string) =>
+    request<{ ok: boolean }>(`/ad-accounts/${id}`, { method: 'DELETE', token }),
   connectAmocrm: (token: string, input: ConnectAmoInput) =>
     request('/integrations/crm/amocrm/connect', { method: 'POST', token, body: JSON.stringify(input) }),
   listCrm: (token: string) => request<CrmConnectionDto[]>('/crm', { token }),
   syncCrm: (token: string, id: string) => request(`/crm/${id}/sync`, { method: 'POST', token }),
+  deleteCrm: (token: string, id: string) =>
+    request<{ ok: boolean }>(`/crm/${id}`, { method: 'DELETE', token }),
   setFeedback: (token: string, id: string, optIn: boolean) =>
     request<AdAccountDto>(`/ad-accounts/${id}/feedback`, {
       method: 'PUT',

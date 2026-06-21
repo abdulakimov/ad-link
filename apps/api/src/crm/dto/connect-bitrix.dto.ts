@@ -1,8 +1,9 @@
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class ConnectBitrixDto {
+  @IsOptional()
   @IsString()
-  clientId!: string;
+  clientId?: string;
 
   /** Display portal, e.g. https://acme.bitrix24.ru */
   @IsString()

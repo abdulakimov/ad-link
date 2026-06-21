@@ -122,6 +122,7 @@ model User {
   email        String   @unique
   passwordHash String
   name         String?
+  avatarUrl    String? // profile picture from Google/Telegram social login
   role         Role     @default(BUYER)
   clientId     String? // CLIENT role is scoped to one client
   createdAt    DateTime @default(now())

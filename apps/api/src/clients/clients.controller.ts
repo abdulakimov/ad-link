@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@adlink/core';
 import { IsString, MinLength } from 'class-validator';
@@ -26,5 +26,11 @@ export class ClientsController {
   @Post('clients')
   create(@Body() dto: CreateClientDto) {
     return this.clients.create(dto.name);
+  }
+
+  @Roles(Role.OWNER, Role.ADMIN)
+  @Delete('clients/:id')
+  remove(@Param('id') id: string) {
+    return this.clients.remove(id);
   }
 }

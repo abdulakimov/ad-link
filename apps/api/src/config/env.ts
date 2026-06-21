@@ -10,6 +10,11 @@ const schema = z.object({
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   API_PORT: z.coerce.number().int().positive().default(4000),
   SENTRY_DSN: z.string().optional(),
+  // social login (optional — each provider self-disables if unset)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CALLBACK_URL: z.string().url().optional(),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

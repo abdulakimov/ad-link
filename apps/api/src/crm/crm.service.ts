@@ -2,6 +2,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { CrmConnection } from '@adlink/db';
 import { Queue } from 'bullmq';
+import { ensureDefaultClient } from '../clients/default-client.js';
 import { SecretsVault } from '../common/crypto/secrets-vault.service.js';
 import { requireTenantId } from '../common/tenant/tenant-context.js';
 import { CrmConnectorRegistry } from '../connectors/crm/crm-connector.registry.js';
@@ -22,12 +23,11 @@ export class CrmService {
   ) {}
 
   async connectBitrix(dto: ConnectBitrixDto) {
-    const client = await this.db.client.findFirst({ where: { id: dto.clientId } });
-    if (!client) throw new NotFoundException('Client not found');
+    const clientId = dto.clientId ?? (await ensureDefaultClient(this.db));
     const created = await this.db.crmConnection.create({
       data: {
         tenantId: requireTenantId(),
-        clientId: dto.clientId,
+        clientId,
         provider: 'BITRIX24',
         externalRef: dto.portal,
         authRef: this.vault.store(dto.webhookUrl),
@@ -37,12 +37,11 @@ export class CrmService {
   }
 
   async connectAmocrm(dto: ConnectAmocrmDto) {
-    const client = await this.db.client.findFirst({ where: { id: dto.clientId } });
-    if (!client) throw new NotFoundException('Client not found');
+    const clientId = dto.clientId ?? (await ensureDefaultClient(this.db));
     const created = await this.db.crmConnection.create({
       data: {
         tenantId: requireTenantId(),
-        clientId: dto.clientId,
+        clientId,
         provider: 'AMOCRM',
         externalRef: dto.baseUrl,
         authRef: this.vault.store(dto.accessToken),
@@ -54,6 +53,12 @@ export class CrmService {
   async list() {
     const rows = await this.db.crmConnection.findMany({ orderBy: { createdAt: 'desc' } });
     return rows.map((r) => this.safe(r));
+  }
+
+  async remove(id: string) {
+    await this.requireConn(id); // tenant-scoped ownership check
+    await this.db.$base.crmConnection.delete({ where: { id } });
+    return { ok: true };
   }
 
   /** Live stages from the CRM, for the mapping UI. */

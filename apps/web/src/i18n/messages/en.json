@@ -123,7 +123,8 @@
     "importSelected": "Import",
     "metaImported": "{n} ad account(s) imported",
     "remove": "Remove",
-    "removed": "Connection removed"
+    "removed": "Connection removed",
+    "linkedCount": "{n} connected"
   },
   "overview": {
     "title": "Overview",

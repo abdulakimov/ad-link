@@ -123,7 +123,8 @@
     "importSelected": "Импортировать",
     "metaImported": "Импортировано аккаунтов: {n}",
     "remove": "Удалить",
-    "removed": "Подключение удалено"
+    "removed": "Подключение удалено",
+    "linkedCount": "подключено: {n}"
   },
   "overview": {
     "title": "Обзор",

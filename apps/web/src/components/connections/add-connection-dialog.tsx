@@ -29,17 +29,25 @@ const PROVIDERS: Array<{ id: Provider; icon: LucideIcon; name: string; tag: stri
   { id: 'AMOCRM', icon: Plug, name: 'amoName', tag: 'amoTag', color: 'text-[#3CB371]' },
 ];
 
-export function AddConnectionDialog({ token, trigger }: { token: string; trigger: ReactNode }) {
+export function AddConnectionDialog({
+  token,
+  trigger,
+  onConnected,
+}: {
+  token: string;
+  trigger: ReactNode;
+  onConnected?: () => void;
+}) {
   const tr = useT();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [provider, setProvider] = useState<Provider | null>(null);
-  const [bitrix, setBitrix] = useState({ portal: '', webhookUrl: '' });
+  const [bitrixWebhook, setBitrixWebhook] = useState('');
   const [amo, setAmo] = useState({ baseUrl: '', accessToken: '' });
 
   function reset() {
     setProvider(null);
-    setBitrix({ portal: '', webhookUrl: '' });
+    setBitrixWebhook('');
     setAmo({ baseUrl: '', accessToken: '' });
   }
 
@@ -50,10 +58,17 @@ export function AddConnectionDialog({ token, trigger }: { token: string; trigger
 
   const connect = useMutation({
     mutationFn: () =>
-      provider === 'BITRIX24' ? api.connectBitrix(token, bitrix) : api.connectAmocrm(token, amo),
+      provider === 'BITRIX24'
+        ? api.connectBitrix(token, {
+            // Portal is just the webhook's origin — no need to ask twice.
+            portal: bitrixPortal(bitrixWebhook)!,
+            webhookUrl: bitrixWebhook.trim(),
+          })
+        : api.connectAmocrm(token, amo),
     onSuccess: () => {
       toast.success(tr(provider === 'BITRIX24' ? 'connections.bitrixConnected' : 'connections.amoConnected'));
       qc.invalidateQueries({ queryKey: ['crm'] });
+      onConnected?.(); // connect auto-enqueues a sync → start live polling
       setOpen(false);
       reset();
     },
@@ -62,7 +77,7 @@ export function AddConnectionDialog({ token, trigger }: { token: string; trigger
 
   const ready =
     provider === 'BITRIX24'
-      ? !!bitrix.portal && bitrix.webhookUrl.length >= 20
+      ? !!bitrixPortal(bitrixWebhook) && bitrixWebhook.includes('/rest/')
       : provider === 'AMOCRM'
         ? !!amo.baseUrl && amo.accessToken.length >= 20
         : false;
@@ -140,22 +155,13 @@ export function AddConnectionDialog({ token, trigger }: { token: string; trigger
             ) : (
               <form onSubmit={submit} className="space-y-4">
               {provider === 'BITRIX24' && (
-                <>
-                  <Field label={tr('connections.fPortal')}>
-                    <Input
-                      value={bitrix.portal}
-                      onChange={(e) => setBitrix((b) => ({ ...b, portal: e.target.value }))}
-                      placeholder="https://acme.bitrix24.ru"
-                    />
-                  </Field>
-                  <Field label={tr('connections.fWebhook')}>
-                    <Input
-                      value={bitrix.webhookUrl}
-                      onChange={(e) => setBitrix((b) => ({ ...b, webhookUrl: e.target.value }))}
-                      placeholder="https://acme.bitrix24.ru/rest/1/xxxx/"
-                    />
-                  </Field>
-                </>
+                <Field label={tr('connections.fWebhook')} hint={tr('connections.fWebhookHint')}>
+                  <Input
+                    value={bitrixWebhook}
+                    onChange={(e) => setBitrixWebhook(e.target.value)}
+                    placeholder="https://acme.bitrix24.ru/rest/1/xxxx/"
+                  />
+                </Field>
               )}
 
               {provider === 'AMOCRM' && (
@@ -189,6 +195,16 @@ export function AddConnectionDialog({ token, trigger }: { token: string; trigger
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Derive the Bitrix24 portal (origin) from the inbound-webhook URL. null if not a valid http(s) URL. */
+function bitrixPortal(webhook: string): string | null {
+  try {
+    const u = new URL(webhook.trim());
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {

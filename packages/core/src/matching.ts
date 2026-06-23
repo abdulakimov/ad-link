@@ -3,6 +3,9 @@ import { MATCH_CONFIDENCE, type MatchMethod, type MatchStatus, REVIEW_THRESHOLD 
 export interface MatchCandidate {
   method: MatchMethod;
   adId: string;
+  /** Optional per-candidate confidence override (e.g. a unique utm_content→ad.name
+   *  is deterministic, a duplicated name is not). Falls back to MATCH_CONFIDENCE[method]. */
+  confidence?: number;
 }
 
 export interface MatchDecision {
@@ -35,7 +38,7 @@ export function decideMatch(candidates: MatchCandidate[]): MatchDecision {
   const best = [...candidates].sort(
     (a, b) => PRIORITY.indexOf(a.method) - PRIORITY.indexOf(b.method),
   )[0]!;
-  const confidence = MATCH_CONFIDENCE[best.method];
+  const confidence = best.confidence ?? MATCH_CONFIDENCE[best.method];
   const status: MatchStatus = confidence >= REVIEW_THRESHOLD ? 'MATCHED' : 'REVIEW';
   return { method: best.method, adId: best.adId, confidence, status };
 }

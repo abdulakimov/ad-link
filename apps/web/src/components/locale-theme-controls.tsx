@@ -33,7 +33,7 @@ export function LocaleThemeControls() {
 }
 
 const triggerCls =
-  'inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background/60 px-2.5 text-sm font-medium shadow-xs backdrop-blur transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'inline-flex h-9 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-sm font-medium shadow-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 function ThemeMenu() {
   const t = useT();

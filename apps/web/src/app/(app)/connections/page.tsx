@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Facebook,
+  Loader2,
   type LucideIcon,
   Plug,
   Plus,
@@ -25,7 +26,11 @@ import { cn } from '@/lib/utils';
 
 type Provider = 'META' | 'BITRIX24' | 'AMOCRM';
 
-const DOT: Record<string, string> = { OK: 'bg-success', FAILED: 'bg-destructive' };
+const DOT: Record<string, string> = { OK: 'bg-success', FAILED: 'bg-destructive', RUNNING: 'bg-warning' };
+
+/** While a sync is RUNNING (or just triggered) poll every 2s so the badge updates live. */
+const anyRunning = (rows?: Array<{ syncState: string }>) =>
+  rows?.some((r) => r.syncState === 'RUNNING') ?? false;
 const PROVIDER_META: Record<Provider, { icon: LucideIcon; color: string; nameKey: string }> = {
   META: { icon: Facebook, color: 'text-[#1877F2]', nameKey: 'connections.metaName' },
   BITRIX24: { icon: Workflow, color: 'text-[#2FC7F7]', nameKey: 'connections.bitrixName' },
@@ -38,8 +43,25 @@ export default function ConnectionsPage() {
   const t = token as string;
   const qc = useQueryClient();
 
-  const adAccounts = useQuery({ queryKey: ['ad-accounts'], enabled: !!token, queryFn: () => api.listAdAccounts(t) });
-  const crm = useQuery({ queryKey: ['crm'], enabled: !!token, queryFn: () => api.listCrm(t) });
+  // Timestamp of the last sync we kicked off — keeps polling alive for a grace window
+  // until the worker flips the row to RUNNING (covers the brief enqueue→pickup gap).
+  const [syncingSince, setSyncingSince] = useState(0);
+  const bumpSyncing = () => setSyncingSince(Date.now());
+  const pollInterval = (rows?: Array<{ syncState: string }>) =>
+    anyRunning(rows) || Date.now() - syncingSince < 15_000 ? 2000 : false;
+
+  const adAccounts = useQuery({
+    queryKey: ['ad-accounts'],
+    enabled: !!token,
+    queryFn: () => api.listAdAccounts(t),
+    refetchInterval: (q) => pollInterval(q.state.data),
+  });
+  const crm = useQuery({
+    queryKey: ['crm'],
+    enabled: !!token,
+    queryFn: () => api.listCrm(t),
+    refetchInterval: (q) => pollInterval(q.state.data),
+  });
   const accounts = adAccounts.data ?? [];
   const crmList = crm.data ?? [];
   const empty = !adAccounts.isLoading && !crm.isLoading && accounts.length === 0 && crmList.length === 0;
@@ -70,8 +92,22 @@ export default function ConnectionsPage() {
   const current = platforms.find((p) => p.id === selected) ?? null;
 
   // ---- mutations ----
-  const syncAcc = useMutation({ mutationFn: (id: string) => api.syncAdAccount(t, id), onSuccess: () => toast.success(tr('connections.metaQueued')) });
-  const syncCrm = useMutation({ mutationFn: (id: string) => api.syncCrm(t, id), onSuccess: () => toast.success(tr('connections.crmQueued')) });
+  const syncAcc = useMutation({
+    mutationFn: (id: string) => api.syncAdAccount(t, id),
+    onMutate: bumpSyncing,
+    onSuccess: () => {
+      toast.success(tr('connections.metaQueued'));
+      qc.invalidateQueries({ queryKey: ['ad-accounts'] });
+    },
+  });
+  const syncCrm = useMutation({
+    mutationFn: (id: string) => api.syncCrm(t, id),
+    onMutate: bumpSyncing,
+    onSuccess: () => {
+      toast.success(tr('connections.crmQueued'));
+      qc.invalidateQueries({ queryKey: ['crm'] });
+    },
+  });
   const feedback = useMutation({
     mutationFn: ({ id, optIn }: { id: string; optIn: boolean }) => api.setFeedback(t, id, optIn),
     onSuccess: () => {
@@ -106,6 +142,7 @@ export default function ConnectionsPage() {
         </div>
         <AddConnectionDialog
           token={t}
+          onConnected={bumpSyncing}
           trigger={
             <Button size="sm">
               <Plus className="size-4" />
@@ -171,17 +208,21 @@ export default function ConnectionsPage() {
           </div>
         ) : (
           // ---- Platform list ----
-          <div className="divide-y divide-border">
+          <div className="grid gap-3 sm:grid-cols-2">
             {platforms.map((p) => {
               const items = [...p.accounts, ...p.crm];
-              const failed = items.some((i) => i.syncState === 'FAILED');
+              const state = items.some((i) => i.syncState === 'RUNNING')
+                ? 'RUNNING'
+                : items.some((i) => i.syncState === 'FAILED')
+                  ? 'FAILED'
+                  : 'OK';
               const meta = PROVIDER_META[p.id];
               return (
                 <button
                   key={p.id}
                   type="button"
                   onClick={() => setSelected(p.id)}
-                  className="flex w-full items-center justify-between gap-3 py-4 text-left transition-colors first:pt-0 last:pb-0"
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:bg-accent"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-secondary">
@@ -190,7 +231,7 @@ export default function ConnectionsPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{tr(meta.nameKey)}</span>
-                        <StatusBadge state={failed ? 'FAILED' : 'OK'} />
+                        <StatusBadge state={state} />
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {tr('connections.linkedCount', { n: String(p.count) })}
@@ -206,7 +247,12 @@ export default function ConnectionsPage() {
       </div>
 
       {metaSession && (
-        <MetaImportDialog token={t} sessionId={metaSession} onClose={() => setMetaSession(null)} />
+        <MetaImportDialog
+          token={t}
+          sessionId={metaSession}
+          onImported={bumpSyncing}
+          onClose={() => setMetaSession(null)}
+        />
       )}
     </main>
   );
@@ -260,6 +306,15 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
 }
 
 function StatusBadge({ state }: { state: string }) {
+  const tr = useT();
+  if (state === 'RUNNING') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+        <Loader2 className="size-3 animate-spin text-warning" />
+        {tr('connections.syncing')}
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
       <span className={cn('size-1.5 rounded-full', DOT[state] ?? 'bg-warning')} />

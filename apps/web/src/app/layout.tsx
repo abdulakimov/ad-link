@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { GeistSans } from 'geist/font/sans';
+import { Onest } from 'next/font/google';
 import { GeistMono } from 'geist/font/mono';
+
+const onest = Onest({ subsets: ['latin'], variable: '--font-onest' });
 import { I18nProvider } from '@/components/i18n-provider';
 import { QueryProvider } from '@/components/query-provider';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -18,7 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${GeistSans.variable} ${GeistMono.variable}`}
+      className={`${onest.variable} ${GeistMono.variable}`}
     >
       <body className="min-h-dvh font-sans antialiased">
         <ThemeProvider

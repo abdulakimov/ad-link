@@ -2,11 +2,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CrmConnector, CrmRef } from '@adlink/core';
 import { ContactResolver } from '../identity/contact-resolver.service.js';
 import { SyncRunService } from '../jobs/sync-run.service.js';
+import { MatchingService } from '../matching/matching.service.js';
 import { createPrismaClient } from '../prisma/prisma.client.js';
 import { CrmSyncService } from './crm-sync.service.js';
 
 const db = createPrismaClient();
-const service = new CrmSyncService(db, new SyncRunService(db), new ContactResolver(db));
+const service = new CrmSyncService(
+  db,
+  new SyncRunService(db),
+  new ContactResolver(db),
+  new MatchingService(db),
+);
 
 const fake: CrmConnector = {
   fetchStages: async () => [

@@ -145,7 +145,15 @@ export interface CrmConnector {
   fetchLeads(conn: CrmRef, since: Date): Promise<RawLead[]>;
   fetchDeals(conn: CrmRef, since: Date): Promise<RawDeal[]>;
   fetchContacts(conn: CrmRef, since: Date): Promise<RawContact[]>;
+  /** Every stage a deal has ever passed through — lets us mark a deal qualified
+   *  if it was *ever* in a qualifying stage, not just its current one. */
+  fetchDealStageHistory?(conn: CrmRef, since: Date): Promise<RawDealStageHistory[]>;
   subscribeWebhooks?(conn: CrmRef): Promise<void>;
+}
+
+export interface RawDealStageHistory {
+  dealExternalId: string;
+  stageExternalId: string;
 }
 
 // ---------------------------------------------------------------------------

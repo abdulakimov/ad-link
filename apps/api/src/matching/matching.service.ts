@@ -29,13 +29,35 @@ export class MatchingService {
       if (sibling?.adId) candidates.push({ method: 'PHONE', adId: sibling.adId });
     }
 
-    // 3. utm_content carrying the ad id (deterministic web attribution via tagged links)
+    // 3. utm_content carrying the ad identity via a tagged link. Two conventions:
+    //    utm_content={{ad.id}}   → matches an ad externalId (deterministic)
+    //    utm_content={{ad.name}} → matches an ad name; unique name = deterministic,
+    //                              a reused name is ambiguous → parked for review.
     if (lead.utmContent) {
-      const ad = await this.db.$base.ad.findFirst({
+      const byId = await this.db.$base.ad.findFirst({
         where: { tenantId, externalId: lead.utmContent },
         select: { id: true },
       });
-      if (ad) candidates.push({ method: 'UTM', adId: ad.id });
+      if (byId) {
+        candidates.push({ method: 'UTM', adId: byId.id, confidence: 0.95 });
+      } else {
+        const byName = await this.db.$base.ad.findMany({
+          where: { tenantId, name: lead.utmContent },
+          select: { id: true },
+        });
+        if (byName.length === 1) {
+          candidates.push({ method: 'UTM', adId: byName[0]!.id, confidence: 0.9 }); // unique → match
+        } else if (byName.length > 1) {
+          // Ambiguous name → break the tie by which of those ads actually spent
+          // around the lead's date; only that ad could have produced the lead.
+          const winner = await this.disambiguateBySpend(
+            byName.map((a) => a.id),
+            lead.createdAt,
+          );
+          if (winner) candidates.push({ method: 'UTM', adId: winner, confidence: 0.8 }); // → match
+          else candidates.push({ method: 'UTM', adId: byName[0]!.id }); // undecidable → review (0.5)
+        }
+      }
     }
 
     const decision = decideMatch(candidates);
@@ -61,6 +83,29 @@ export class MatchingService {
       });
     }
     return decision;
+  }
+
+  /**
+   * Among several same-named ads, pick the one that actually spent — first on the lead's
+   * own day (the ad that was live when the lead came in), else the only ad that ever spent.
+   * Returns null when it can't be decided (0 or several spenders) → caller routes to review.
+   */
+  private async disambiguateBySpend(adIds: string[], leadAt: Date): Promise<string | null> {
+    const day = new Date(Date.UTC(leadAt.getUTCFullYear(), leadAt.getUTCMonth(), leadAt.getUTCDate()));
+    const sameDay = await this.db.$base.adInsightDaily.findMany({
+      where: { adId: { in: adIds }, date: day, spend: { gt: 0 } },
+      select: { adId: true },
+      orderBy: { spend: 'desc' },
+    });
+    if (sameDay.length) return sameDay[0]!.adId; // the (top) ad spending that day
+
+    // No spend on the lead's day → if exactly one of these ads ever spent, it's the one.
+    const ever = await this.db.$base.adInsightDaily.groupBy({
+      by: ['adId'],
+      where: { adId: { in: adIds }, spend: { gt: 0 } },
+      _sum: { spend: true },
+    });
+    return ever.length === 1 ? ever[0]!.adId : null;
   }
 
   async matchUnmatched(tenantId: string) {

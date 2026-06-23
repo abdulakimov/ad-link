@@ -1,5 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import type { CrmConnector, CrmRef, RawContact, RawDeal, RawLead, RawStage } from '@adlink/core';
+import type {
+  CrmConnector,
+  CrmRef,
+  RawContact,
+  RawDeal,
+  RawDealStageHistory,
+  RawLead,
+  RawStage,
+} from '@adlink/core';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Bitrix REST payloads are external/untyped */
 
@@ -21,7 +29,7 @@ export class Bitrix24Connector implements CrmConnector {
     const rows = await this.paged((start) =>
       this.url(conn, 'crm.deal.list', select, since, start),
     );
-    return rows.map((d: any) => ({
+    const deals = rows.map((d: any) => ({
       externalId: String(d.ID),
       contactExternalId: d.CONTACT_ID ? String(d.CONTACT_ID) : undefined,
       stageExternalId: String(d.STAGE_ID),
@@ -30,6 +38,16 @@ export class Bitrix24Connector implements CrmConnector {
       createdAt: String(d.DATE_CREATE),
       wonAt: d.CLOSED === 'Y' && d.CLOSEDATE ? String(d.CLOSEDATE) : undefined,
     }));
+    // Deals with no primary CONTACT_ID may still be bound to contacts → recover the first.
+    // ponytail: one extra call per contactless deal; batch via crm.deal.contact.items.list if it gets hot.
+    const base = this.base(conn);
+    for (const d of deals) {
+      if (d.contactExternalId) continue;
+      const items = await this.callList(`${base}/crm.deal.contact.items.get.json?id=${d.externalId}`);
+      const primary = items.find((i: any) => i.IS_PRIMARY === 'Y') ?? items[0];
+      if (primary?.CONTACT_ID) d.contactExternalId = String(primary.CONTACT_ID);
+    }
+    return deals;
   }
 
   async fetchContacts(conn: CrmRef, since: Date): Promise<RawContact[]> {
@@ -46,7 +64,11 @@ export class Bitrix24Connector implements CrmConnector {
   }
 
   async fetchLeads(conn: CrmRef, since: Date): Promise<RawLead[]> {
-    const select = ['ID', 'TITLE', 'NAME', 'LAST_NAME', 'PHONE', 'EMAIL', 'DATE_CREATE'];
+    // UTM_* are standard Bitrix lead fields — they carry the web/ad attribution tags.
+    const select = [
+      'ID', 'TITLE', 'NAME', 'LAST_NAME', 'PHONE', 'EMAIL', 'DATE_CREATE',
+      'UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM',
+    ];
     const rows = await this.paged((start) =>
       this.url(conn, 'crm.lead.list', select, since, start),
     );
@@ -56,8 +78,36 @@ export class Bitrix24Connector implements CrmConnector {
       name: [l.NAME, l.LAST_NAME].filter(Boolean).join(' ') || l.TITLE || undefined,
       phones: this.multi(l.PHONE),
       emails: this.multi(l.EMAIL),
+      utm: this.utm(l),
       createdAt: String(l.DATE_CREATE),
     }));
+  }
+
+  /** Every stage transition a deal went through (crm.stagehistory, entityTypeId 2 = deal). */
+  async fetchDealStageHistory(conn: CrmRef, since: Date): Promise<RawDealStageHistory[]> {
+    const base = this.base(conn);
+    const out: RawDealStageHistory[] = [];
+    let start = 0;
+    let guard = 0;
+    while (guard++ < 2000) {
+      const p = new URLSearchParams();
+      p.set('entityTypeId', '2');
+      p.set('order[CREATED_TIME]', 'ASC');
+      p.set('filter[>=CREATED_TIME]', since.toISOString());
+      ['OWNER_ID', 'STAGE_ID'].forEach((s) => p.append('select[]', s));
+      p.set('start', String(start));
+      const res = await fetch(`${base}/crm.stagehistory.list.json?${p.toString()}`);
+      if (!res.ok) throw new Error(`Bitrix ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const json = (await res.json()) as { result?: { items?: any[] }; next?: number };
+      for (const it of json.result?.items ?? []) {
+        if (it.OWNER_ID != null && it.STAGE_ID != null) {
+          out.push({ dealExternalId: String(it.OWNER_ID), stageExternalId: String(it.STAGE_ID) });
+        }
+      }
+      if (json.next == null) break;
+      start = json.next;
+    }
+    return out;
   }
 
   // ---- helpers ----
@@ -71,6 +121,20 @@ export class Bitrix24Connector implements CrmConnector {
     p.set('filter[>DATE_MODIFY]', since.toISOString());
     p.set('start', String(start));
     return `${this.base(conn)}/${method}.json?${p.toString()}`;
+  }
+
+  /** Pick the UTM tags Bitrix stored on the lead; undefined when none are present. */
+  private utm(row: any): RawLead['utm'] {
+    const pairs: Array<[keyof NonNullable<RawLead['utm']>, any]> = [
+      ['source', row.UTM_SOURCE],
+      ['medium', row.UTM_MEDIUM],
+      ['campaign', row.UTM_CAMPAIGN],
+      ['content', row.UTM_CONTENT],
+      ['term', row.UTM_TERM],
+    ];
+    const out: NonNullable<RawLead['utm']> = {};
+    for (const [k, v] of pairs) if (v) out[k] = String(v);
+    return Object.keys(out).length ? out : undefined;
   }
 
   /** Bitrix multi-fields look like [{ VALUE: '...', VALUE_TYPE: 'WORK' }]. */

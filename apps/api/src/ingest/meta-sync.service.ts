@@ -41,6 +41,9 @@ export class MetaSyncService {
     opts: { trailingDays?: number } = {},
   ) {
     const run = await this.syncRun.start(tenantId, 'meta_sync');
+    await this.db.$base.adAccount
+      .update({ where: { id: acc.id }, data: { syncState: 'RUNNING' } })
+      .catch(() => undefined);
     try {
       const hierarchy = await connector.fetchAdHierarchy(acc);
       await this.upsertHierarchy(tenantId, acc.id, hierarchy);

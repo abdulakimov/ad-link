@@ -7,6 +7,7 @@ import { SecretsVault } from '../common/crypto/secrets-vault.service.js';
 import { requireTenantId } from '../common/tenant/tenant-context.js';
 import { CrmConnectorRegistry } from '../connectors/crm/crm-connector.registry.js';
 import { CRM_SYNC_QUEUE } from '../connectors/crm/crm-sync.processor.js';
+import { rollupCanonical } from './canonical.js';
 import type { Db } from '../prisma/prisma.client.js';
 import { DB } from '../prisma/prisma.tokens.js';
 import type { ConnectAmocrmDto } from './dto/connect-amocrm.dto.js';
@@ -33,6 +34,7 @@ export class CrmService {
         authRef: this.vault.store(dto.webhookUrl),
       },
     });
+    await this.enqueueSync(created.id); // kick off the first sync so data starts flowing
     return this.safe(created);
   }
 
@@ -47,6 +49,7 @@ export class CrmService {
         authRef: this.vault.store(dto.accessToken),
       },
     });
+    await this.enqueueSync(created.id); // kick off the first sync so data starts flowing
     return this.safe(created);
   }
 
@@ -77,7 +80,8 @@ export class CrmService {
     return this.db.stageMapping.findMany({ where: { crmConnectionId: id } });
   }
 
-  /** Upsert mappings — remap any stage without losing data. */
+  /** Upsert mappings — remap any stage without losing data. Re-canonicalizes existing
+   *  deals immediately so the change shows up in metrics without waiting for a re-sync. */
   async setMappings(id: string, dto: SetMappingsDto) {
     const conn = await this.requireConn(id);
     for (const m of dto.mappings) {
@@ -93,13 +97,34 @@ export class CrmService {
         update: { externalStageName: m.externalStageName, canonical: m.canonical },
       });
     }
+    await this.recanonicalize(conn.tenantId, id);
     return this.getMappings(id);
+  }
+
+  /** Recompute every deal's canonical from its stored stage history + current mappings,
+   *  so a remap (or a sync) reflects "qualified if ever in a qualifying stage". */
+  private async recanonicalize(tenantId: string, crmConnectionId: string) {
+    const rows = await this.db.stageMapping.findMany({ where: { crmConnectionId } });
+    const mapping = new Map(rows.map((r) => [r.externalStageId, r.canonical]));
+    const deals = await this.db.$base.deal.findMany({
+      where: { tenantId },
+      select: { id: true, stageExternalId: true, stageHistory: true },
+    });
+    for (const d of deals) {
+      const stages = d.stageHistory.length ? d.stageHistory : [d.stageExternalId];
+      const canonical = rollupCanonical(stages, mapping, d.stageExternalId);
+      await this.db.$base.deal.update({ where: { id: d.id }, data: { canonical } });
+    }
   }
 
   async triggerSync(id: string) {
     const conn = await this.requireConn(id);
-    await this.queue.add('sync', { crmConnectionId: conn.id }, { removeOnComplete: true, removeOnFail: 100 });
+    await this.enqueueSync(conn.id);
     return { enqueued: true, crmConnectionId: conn.id };
+  }
+
+  private enqueueSync(crmConnectionId: string) {
+    return this.queue.add('sync', { crmConnectionId }, { removeOnComplete: true, removeOnFail: 100 });
   }
 
   private async requireConn(id: string): Promise<CrmConnection> {

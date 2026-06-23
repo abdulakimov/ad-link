@@ -50,7 +50,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-dvh">
       <aside
         className={cn(
-          'sticky top-0 z-20 flex h-dvh shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur transition-[width] duration-200',
+          'sticky top-0 z-20 flex h-dvh shrink-0 flex-col border-r border-border bg-card transition-[width] duration-200',
           collapsed ? 'w-16' : 'w-60',
         )}
       >
@@ -109,7 +109,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-end gap-2 border-b border-border bg-background/80 px-6 backdrop-blur">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-end gap-2 border-b border-border bg-background px-6">
           <LocaleThemeControls />
           <UserMenu />
         </header>

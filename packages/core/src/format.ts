@@ -22,8 +22,10 @@ export function formatCurrency(
       style: 'currency',
       currency,
       notation: opts.compact ? 'compact' : 'standard',
+      // Show the real figure — $389.5 stays $389.5, never rounded up to $390.
+      // Whole amounts still render clean ($219, not $219.00).
       minimumFractionDigits: opts.decimals ?? 0,
-      maximumFractionDigits: opts.decimals ?? 0,
+      maximumFractionDigits: opts.decimals ?? 2,
     }).format(n),
   );
 }

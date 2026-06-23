@@ -1,11 +1,12 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Facebook } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Check, Facebook, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useT } from '@/components/i18n-provider';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -22,10 +23,12 @@ export function MetaImportDialog({
   token,
   sessionId,
   onClose,
+  onImported,
 }: {
   token: string;
   sessionId: string;
   onClose: () => void;
+  onImported?: () => void;
 }) {
   const tr = useT();
   const qc = useQueryClient();
@@ -35,6 +38,26 @@ export function MetaImportDialog({
   });
   const accounts = data?.accounts ?? [];
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return accounts;
+    return accounts.filter(
+      (a) =>
+        (a.name ?? '').toLowerCase().includes(q) || a.externalId.toLowerCase().includes(q),
+    );
+  }, [accounts, query]);
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every((a) => selected.has(a.externalId));
+
+  const toggleAllFiltered = () =>
+    setSelected((s) => {
+      const next = new Set(s);
+      for (const a of filtered) allFilteredSelected ? next.delete(a.externalId) : next.add(a.externalId);
+      return next;
+    });
 
   // Default to all selected once the candidates load.
   useEffect(() => {
@@ -46,6 +69,7 @@ export function MetaImportDialog({
     onSuccess: (r) => {
       toast.success(tr('connections.metaImported', { n: String(r.imported) }));
       qc.invalidateQueries({ queryKey: ['ad-accounts'] });
+      onImported?.(); // import auto-enqueues a sync → start live polling
       onClose();
     },
     onError: (e) => toast.error((e as Error).message),
@@ -71,8 +95,37 @@ export function MetaImportDialog({
             {tr('connections.metaNoAccounts')}
           </p>
         ) : (
-          <div className="max-h-80 space-y-1.5 overflow-y-auto">
-            {accounts.map((a) => {
+          <>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={tr('connections.searchAccounts')}
+                  className="pl-8"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={toggleAllFiltered}
+                disabled={filtered.length === 0}
+              >
+                {allFilteredSelected
+                  ? tr('connections.clearSelection')
+                  : tr('connections.selectAll')}
+              </Button>
+            </div>
+
+            {filtered.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {tr('connections.noMatches')}
+              </p>
+            ) : (
+              <div className="max-h-80 space-y-1.5 overflow-y-auto">
+                {filtered.map((a) => {
               const on = selected.has(a.externalId);
               return (
                 <button
@@ -103,8 +156,10 @@ export function MetaImportDialog({
                   </span>
                 </button>
               );
-            })}
-          </div>
+                })}
+              </div>
+            )}
+          </>
         )}
 
         <DialogFooter>

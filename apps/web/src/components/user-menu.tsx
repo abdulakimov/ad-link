@@ -35,7 +35,7 @@ export function UserMenu() {
       ariaLabel={t('userMenu.account')}
       align="end"
       contentClassName="w-72"
-      triggerClassName="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background/60 pl-1 pr-2 text-sm font-medium shadow-xs backdrop-blur transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      triggerClassName="inline-flex h-9 items-center gap-2 rounded-md border border-input bg-background pl-1 pr-2 text-sm font-medium shadow-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       trigger={
         <>
           <Avatar src={avatar} initial={initial} />

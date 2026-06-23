@@ -135,7 +135,7 @@ export class AdAccountsService {
 
     for (const a of accounts) {
       const externalId = `act_${a.account_id}`;
-      await this.db.$base.adAccount.upsert({
+      const acc = await this.db.$base.adAccount.upsert({
         where: { provider_externalId: { provider: 'META', externalId } },
         create: {
           tenantId,
@@ -155,6 +155,8 @@ export class AdAccountsService {
           syncState: 'OK',
         },
       });
+      // Kick off the first sync right after import so data starts flowing.
+      await this.queue.add('sync', { adAccountId: acc.id }, { removeOnComplete: true, removeOnFail: 100 });
     }
     return accounts.length;
   }

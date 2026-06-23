@@ -20,6 +20,9 @@ describe('MatchingService', () => {
     const adSet = await db.$base.adSet.create({ data: { tenantId, campaignId: campaign.id, externalId: 'S1', name: 'S' } });
     const ad = await db.$base.ad.create({ data: { tenantId, adSetId: adSet.id, externalId: 'A1', name: 'Ad 1' } });
     adId = ad.id;
+    // Two ads share a name → utm_content by that name is ambiguous (must go to review).
+    await db.$base.ad.create({ data: { tenantId, adSetId: adSet.id, externalId: 'A2', name: 'Dup Ad' } });
+    await db.$base.ad.create({ data: { tenantId, adSetId: adSet.id, externalId: 'A3', name: 'Dup Ad' } });
 
     const contact = await db.$base.contact.create({ data: { tenantId, name: 'Ali' } });
 
@@ -31,9 +34,13 @@ describe('MatchingService', () => {
     await db.$base.lead.create({
       data: { tenantId, source: 'CRM', externalId: 'L1', contactId: contact.id, matchStatus: 'UNMATCHED', createdAt: new Date() },
     });
-    // Website lead — ad id in utm_content
+    // Website lead — ad externalId in utm_content (deterministic → matched)
     await db.$base.lead.create({
       data: { tenantId, source: 'WEBSITE', externalId: 'W1', utmContent: 'A1', matchStatus: 'UNMATCHED', createdAt: new Date() },
+    });
+    // Website lead — a duplicated ad NAME in utm_content (ambiguous → review)
+    await db.$base.lead.create({
+      data: { tenantId, source: 'WEBSITE', externalId: 'W2', utmContent: 'Dup Ad', matchStatus: 'UNMATCHED', createdAt: new Date() },
     });
   });
 
@@ -46,20 +53,25 @@ describe('MatchingService', () => {
     await db.$base.$disconnect();
   });
 
-  it('attributes leads via contact sibling and utm, routing weak matches to review', async () => {
+  it('attributes leads via contact sibling and utm, routing ambiguous matches to review', async () => {
     const result = await service.matchUnmatched(tenantId);
-    expect(result.processed).toBe(2);
+    expect(result.processed).toBe(3);
 
     const crm = await db.$base.lead.findFirst({ where: { tenantId, externalId: 'L1' } });
     expect(crm).toMatchObject({ adId, matchMethod: 'PHONE', matchStatus: 'MATCHED' });
 
+    // utm_content = ad externalId → deterministic → matched
     const web = await db.$base.lead.findFirst({ where: { tenantId, externalId: 'W1' } });
-    expect(web).toMatchObject({ adId, matchMethod: 'UTM', matchStatus: 'REVIEW' });
+    expect(web).toMatchObject({ adId, matchMethod: 'UTM', matchStatus: 'MATCHED' });
+
+    // utm_content = a duplicated ad name → ambiguous → review (never counted as revenue)
+    const dup = await db.$base.lead.findFirst({ where: { tenantId, externalId: 'W2' } });
+    expect(dup).toMatchObject({ matchMethod: 'UTM', matchStatus: 'REVIEW' });
   });
 
   it('reports an account match rate and review queue', async () => {
     const rate = await service.matchRate(tenantId);
-    expect(rate).toMatchObject({ total: 3, matched: 2, review: 1 });
+    expect(rate).toMatchObject({ total: 4, matched: 3, review: 1 });
     expect((await service.reviewQueue(tenantId)).length).toBe(1);
   });
 });

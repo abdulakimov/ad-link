@@ -347,6 +347,7 @@ model Deal {
   lead            Lead?           @relation(fields: [leadId], references: [id])
   externalId      String
   stageExternalId String
+  stageHistory    String[]        @default([]) // every stage the deal has passed through
   canonical       CanonicalStatus
   amount          Decimal?        @db.Decimal(18, 2)
   currency        String?

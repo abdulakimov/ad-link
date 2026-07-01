@@ -49,6 +49,7 @@ export default function PerformancePage() {
   }, [router]);
 
   const [model, setModel] = useState<'FIRST_TOUCH' | 'LAST_TOUCH'>('LAST_TOUCH');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL');
   const [range, setRange] = useState<DateRange>({ label: 'Last 30 days' });
   const { data, isLoading, error } = useQuery({
     queryKey: ['performance', model, range.from, range.to],
@@ -75,33 +76,36 @@ export default function PerformancePage() {
   // Breadcrumb path of the ancestors we've drilled into ([] = top-level campaigns).
   const [path, setPath] = useState<MetricRow[]>([]);
   const current = path.at(-1) ?? null;
-  const visibleRows = current ? (childrenOf.get(current.id) ?? []) : roots;
   const hasChildren = (id: string) => (childrenOf.get(id)?.length ?? 0) > 0;
+  const visibleRows = useMemo(() => {
+    const rows = current ? (childrenOf.get(current.id) ?? []) : roots;
+    if (statusFilter === 'ALL') return rows;
+    return rows.filter((r) => (r.status === 'ACTIVE') === (statusFilter === 'ACTIVE'));
+  }, [current, childrenOf, roots, statusFilter]);
 
   const columns = useMemo<ColumnDef<MetricRow>[]>(
     () => [
       {
         accessorKey: 'name',
         header: 'Campaign / Ad set / Ad',
+        cell: ({ row }) => (
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-medium">{row.original.name}</span>
+            {hasChildren(row.original.id) && (
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'delivery',
+        header: 'Delivery',
         cell: ({ row }) => {
-          const { status, effectiveStatus } = row.original;
-          // Configured "on" (status) can still fail to deliver (effectiveStatus) — e.g. a payment
-          // error — so flag the mismatch instead of only showing the on/off toggle.
-          const notDelivering =
-            status === 'ACTIVE' && !!effectiveStatus && effectiveStatus !== 'ACTIVE';
+          const { label, dotClass } = deliveryInfo(row.original.status, row.original.effectiveStatus);
           return (
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2">
-                <span className="font-medium">{row.original.name}</span>
-                {notDelivering && (
-                  <span className="rounded-sm bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
-                    {effectiveStatusLabel(effectiveStatus)}
-                  </span>
-                )}
-              </span>
-              {hasChildren(row.original.id) && (
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              )}
+            <div className="flex items-center justify-end gap-1.5">
+              <span className={cn('size-2 shrink-0 rounded-full', dotClass)} />
+              <span className="text-sm text-muted-foreground">{label}</span>
             </div>
           );
         },
@@ -160,6 +164,16 @@ export default function PerformancePage() {
             <SelectContent>
               <SelectItem value="LAST_TOUCH">Last-touch</SelectItem>
               <SelectItem value="FIRST_TOUCH">First-touch</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All campaigns</SelectItem>
+              <SelectItem value="ACTIVE">Active</SelectItem>
+              <SelectItem value="PAUSED">Paused</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -259,7 +273,11 @@ export default function PerformancePage() {
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
-                      className={cell.column.id === 'name' ? '' : 'text-right font-mono'}
+                      className={cn(
+                        cell.column.id === 'name' && '',
+                        cell.column.id === 'delivery' && 'text-right',
+                        cell.column.id !== 'name' && cell.column.id !== 'delivery' && 'text-right font-mono',
+                      )}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
@@ -300,6 +318,17 @@ const EFFECTIVE_STATUS_LABELS: Record<string, string> = {
   IN_PROCESS: 'In review',
 };
 
-function effectiveStatusLabel(effectiveStatus: string): string {
-  return EFFECTIVE_STATUS_LABELS[effectiveStatus] ?? 'Not delivering';
+/**
+ * Mirrors Meta's own Delivery column: the on/off toggle (`status`) can say "on" while
+ * the account/ad actually isn't delivering (`effectiveStatus`) — e.g. a payment error.
+ */
+function deliveryInfo(
+  status: string | null | undefined,
+  effectiveStatus: string | null | undefined,
+): { label: string; dotClass: string } {
+  if (status !== 'ACTIVE') return { label: 'Off', dotClass: 'bg-muted-foreground/40' };
+  if (!effectiveStatus || effectiveStatus === 'ACTIVE') {
+    return { label: 'Active', dotClass: 'bg-emerald-500' };
+  }
+  return { label: EFFECTIVE_STATUS_LABELS[effectiveStatus] ?? 'Not delivering', dotClass: 'bg-destructive' };
 }

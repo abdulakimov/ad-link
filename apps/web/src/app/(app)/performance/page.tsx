@@ -232,9 +232,8 @@ export default function PerformancePage() {
         </nav>
       )}
 
-      <div className="rounded-lg bg-card shadow-sm">
-        <Table>
-          <TableHeader>
+      <Table containerClassName="max-h-[calc(100dvh-260px)] overflow-auto rounded-lg bg-card shadow-sm">
+        <TableHeader>
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id} className="border-b bg-secondary hover:bg-secondary">
                 {hg.headers.map((h) => {
@@ -245,7 +244,7 @@ export default function PerformancePage() {
                       key={h.id}
                       onClick={h.column.getToggleSortingHandler()}
                       className={cn(
-                        'sticky top-14 cursor-pointer select-none bg-secondary transition-colors hover:bg-primary/5',
+                        'sticky top-0 cursor-pointer select-none bg-secondary transition-colors hover:bg-primary/5',
                         isName ? 'z-30 left-0' : 'z-10',
                         sorted && 'bg-primary/10',
                       )}
@@ -347,7 +346,6 @@ export default function PerformancePage() {
             </TableFooter>
           )}
         </Table>
-      </div>
     </main>
   );
 }

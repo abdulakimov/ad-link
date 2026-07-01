@@ -21,9 +21,11 @@ export function UserMenu() {
     queryFn: () => api.me(token as string),
   });
 
-  const name = user?.name ?? user?.email ?? '';
+  const name = user?.name ?? user?.username ?? user?.email ?? '';
   const initial = (name || '?').charAt(0).toUpperCase();
   const avatar = user?.avatarUrl ?? null;
+  // prefer the @handle; fall back to email (hides synthetic Telegram emails)
+  const handle = user?.username ? `@${user.username}` : user?.email;
 
   function logout() {
     clearToken();
@@ -51,9 +53,7 @@ export function UserMenu() {
             <Avatar src={avatar} initial={initial} size="lg" />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">{name || '…'}</div>
-              {user?.email && (
-                <div className="truncate text-xs text-muted-foreground">{user.email}</div>
-              )}
+              {handle && <div className="truncate text-xs text-muted-foreground">{handle}</div>}
             </div>
           </div>
 

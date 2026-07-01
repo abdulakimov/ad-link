@@ -40,6 +40,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+  username: string | null;
   avatarUrl: string | null;
   role: string;
   tenantId: string;
@@ -184,6 +185,18 @@ export const api = {
   register: (input: { tenantName: string; email: string; password: string; name?: string }) =>
     request<AuthResult>('/auth/register', { method: 'POST', body: JSON.stringify(input) }),
   me: (token: string) => request<AuthUser>('/me', { token }),
+  qrStart: () =>
+    request<{ qrId: string; secret: string; expiresIn: number }>('/auth/qr/start', {
+      method: 'POST',
+    }),
+  qrStatus: (qrId: string, secret: string) =>
+    request<{ status: 'pending' | 'approved' | 'expired'; token?: string; user?: AuthUser }>(
+      `/auth/qr/status?qrId=${encodeURIComponent(qrId)}&secret=${encodeURIComponent(secret)}`,
+    ),
+  qrInfo: (qrId: string) =>
+    request<{ status: 'pending' | 'approved' | 'expired'; expiresIn: number }>(
+      `/auth/qr/info?qrId=${encodeURIComponent(qrId)}`,
+    ),
   listClients: (token: string) => request<Client[]>('/clients', { token }),
   createClient: (token: string, name: string) =>
     request<Client>('/clients', { method: 'POST', token, body: JSON.stringify({ name }) }),

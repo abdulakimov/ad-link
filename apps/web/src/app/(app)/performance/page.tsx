@@ -83,14 +83,28 @@ export default function PerformancePage() {
       {
         accessorKey: 'name',
         header: 'Campaign / Ad set / Ad',
-        cell: ({ row }) => (
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-medium">{row.original.name}</span>
-            {hasChildren(row.original.id) && (
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-            )}
-          </div>
-        ),
+        cell: ({ row }) => {
+          const { status, effectiveStatus } = row.original;
+          // Configured "on" (status) can still fail to deliver (effectiveStatus) — e.g. a payment
+          // error — so flag the mismatch instead of only showing the on/off toggle.
+          const notDelivering =
+            status === 'ACTIVE' && !!effectiveStatus && effectiveStatus !== 'ACTIVE';
+          return (
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <span className="font-medium">{row.original.name}</span>
+                {notDelivering && (
+                  <span className="rounded-sm bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive">
+                    {effectiveStatusLabel(effectiveStatus)}
+                  </span>
+                )}
+              </span>
+              {hasChildren(row.original.id) && (
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              )}
+            </div>
+          );
+        },
       },
       money('spend', 'Spend', currency),
       plain('leads', 'Leads'),
@@ -274,4 +288,18 @@ function plain(key: keyof MetricRow, header: string): ColumnDef<MetricRow> {
     header,
     cell: ({ getValue }) => formatNumber(getValue<number | null>()),
   };
+}
+
+const EFFECTIVE_STATUS_LABELS: Record<string, string> = {
+  PENDING_BILLING_INFO: 'Payment error',
+  CAMPAIGN_PAUSED: 'Paused (parent)',
+  ADSET_PAUSED: 'Paused (parent)',
+  DISAPPROVED: 'Disapproved',
+  WITH_ISSUES: 'Delivery issue',
+  PENDING_REVIEW: 'In review',
+  IN_PROCESS: 'In review',
+};
+
+function effectiveStatusLabel(effectiveStatus: string): string {
+  return EFFECTIVE_STATUS_LABELS[effectiveStatus] ?? 'Not delivering';
 }

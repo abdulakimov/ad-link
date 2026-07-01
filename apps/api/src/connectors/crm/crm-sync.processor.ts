@@ -42,6 +42,9 @@ export class CrmSyncProcessor extends WorkerHost {
       externalRef: conn.externalRef,
       auth: this.vault.retrieve(conn.authRef),
     };
-    await this.sync.sync(this.registry.resolve(conn.provider), ref, conn.tenantId);
+    // Incremental window (catch updates) but never before connection; and gate ingestion at the
+    // connect date so pre-connection history is never stored.
+    const since = conn.lastSyncAt ?? conn.createdAt;
+    await this.sync.sync(this.registry.resolve(conn.provider), ref, conn.tenantId, since, conn.createdAt);
   }
 }

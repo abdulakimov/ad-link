@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AuthField, AuthShell, AuthSwitch } from '@/components/auth/auth-shell';
+import { QrLogin } from '@/components/auth/qr-login';
 import { SocialAuth } from '@/components/auth/social-auth';
 import { useT } from '@/components/i18n-provider';
 import { Button } from '@/components/ui/button';
@@ -43,7 +44,7 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthShell>
+    <AuthShell aside={<QrLogin />}>
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">{t('auth.signInTitle')}</h1>
         <p className="text-sm text-muted-foreground">{t('auth.signInSubtitle')}</p>

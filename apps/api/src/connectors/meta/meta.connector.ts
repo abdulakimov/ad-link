@@ -25,7 +25,7 @@ export class MetaConnector implements AdConnector {
 
   async fetchAdHierarchy(acc: AdAccountRef): Promise<RawHierarchy> {
     const fields =
-      'name,status,adsets.limit(500){name,status,ads.limit(500){name,status,creative{id,name}}}';
+      'name,status,effective_status,adsets.limit(500){name,status,effective_status,ads.limit(500){name,status,effective_status,creative{id,name}}}';
     const url = `${graph(this.version)}/${acc.externalId}/campaigns?fields=${encodeURIComponent(
       fields,
     )}&limit=200`;
@@ -35,14 +35,17 @@ export class MetaConnector implements AdConnector {
         externalId: c.id,
         name: c.name,
         status: c.status,
+        effectiveStatus: c.effective_status,
         adSets: (c.adsets?.data ?? []).map((s: any) => ({
           externalId: s.id,
           name: s.name,
           status: s.status,
+          effectiveStatus: s.effective_status,
           ads: (s.ads?.data ?? []).map((a: any) => ({
             externalId: a.id,
             name: a.name,
             status: a.status,
+            effectiveStatus: a.effective_status,
             creativeExternalId: a.creative?.id,
             creativeName: a.creative?.name,
           })),

@@ -27,6 +27,7 @@ interface Acc {
   name: string;
   parentId: string | null;
   status: string | null;
+  effectiveStatus: string | null;
   spend: number;
   impressions: number;
   clicks: number;
@@ -55,6 +56,10 @@ export class MetricsService {
     const reportCurrency = tenant?.reportCurrency ?? 'USD';
     const fromD = new Date(`${range.from}T00:00:00.000Z`);
     const toD = new Date(`${range.to}T23:59:59.999Z`);
+    // Nothing before a platform was connected counts (PLAN: "only after connection").
+    const { metaFloor, crmFloor } = await this.connectionFloors(tenantId);
+    const spendFrom = laterOf(fromD, metaFloor);
+    const leadFrom = laterOf(fromD, crmFloor);
     const fx = await this.loadFx();
     const convert = (amount: number, from: string) =>
       from === reportCurrency ? amount : amount * (fx.get(`${from}>${reportCurrency}`) ?? 1);
@@ -70,9 +75,33 @@ export class MetricsService {
     };
     const adMeta = new Map<string, { adsetId: string; campaignId: string; currency: string }>();
     for (const ad of ads) {
-      ensure({ level: 'ad', id: ad.id, name: ad.name, parentId: ad.adSetId, status: ad.status, ...zero() });
-      ensure({ level: 'adset', id: ad.adSet.id, name: ad.adSet.name, parentId: ad.adSet.campaignId, status: ad.adSet.status, ...zero() });
-      ensure({ level: 'campaign', id: ad.adSet.campaign.id, name: ad.adSet.campaign.name, parentId: null, status: ad.adSet.campaign.status, ...zero() });
+      ensure({
+        level: 'ad',
+        id: ad.id,
+        name: ad.name,
+        parentId: ad.adSetId,
+        status: ad.status,
+        effectiveStatus: ad.effectiveStatus,
+        ...zero(),
+      });
+      ensure({
+        level: 'adset',
+        id: ad.adSet.id,
+        name: ad.adSet.name,
+        parentId: ad.adSet.campaignId,
+        status: ad.adSet.status,
+        effectiveStatus: ad.adSet.effectiveStatus,
+        ...zero(),
+      });
+      ensure({
+        level: 'campaign',
+        id: ad.adSet.campaign.id,
+        name: ad.adSet.campaign.name,
+        parentId: null,
+        status: ad.adSet.campaign.status,
+        effectiveStatus: ad.adSet.campaign.effectiveStatus,
+        ...zero(),
+      });
       adMeta.set(ad.id, {
         adsetId: ad.adSet.id,
         campaignId: ad.adSet.campaign.id,
@@ -91,7 +120,7 @@ export class MetricsService {
     // --- spend / impressions / clicks (in range) ---
     const insights = await this.db.$base.adInsightDaily.groupBy({
       by: ['adId'],
-      where: { tenantId, date: { gte: fromD, lte: toD } },
+      where: { tenantId, date: { gte: spendFrom, lte: toD } },
       _sum: { spend: true, impressions: true, clicks: true },
     });
     for (const row of insights) {
@@ -106,7 +135,13 @@ export class MetricsService {
 
     // --- contact → attributed ad, by model (across all matched leads) ---
     const allLeads = await this.db.$base.lead.findMany({
-      where: { tenantId, adId: { not: null }, matchStatus: 'MATCHED', contactId: { not: null } },
+      where: {
+        tenantId,
+        adId: { not: null },
+        matchStatus: 'MATCHED',
+        contactId: { not: null },
+        createdAt: crmFloor ? { gte: crmFloor } : undefined,
+      },
       select: { adId: true, contactId: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -122,7 +157,7 @@ export class MetricsService {
 
     // --- leads (cohort by created date) + qualified (lead-level) ---
     const leadsInRange = await this.db.$base.lead.findMany({
-      where: { tenantId, adId: { not: null }, matchStatus: 'MATCHED', createdAt: { gte: fromD, lte: toD } },
+      where: { tenantId, adId: { not: null }, matchStatus: 'MATCHED', createdAt: { gte: leadFrom, lte: toD } },
       select: { adId: true, contactId: true },
     });
     const contactsInRange = new Set(
@@ -131,7 +166,11 @@ export class MetricsService {
 
     const deals = contactsInRange.size
       ? await this.db.$base.deal.findMany({
-          where: { tenantId, contactId: { in: [...contactsInRange] } },
+          where: {
+            tenantId,
+            contactId: { in: [...contactsInRange] },
+            createdAt: crmFloor ? { gte: crmFloor } : undefined,
+          },
           select: { contactId: true, canonical: true, amount: true, currency: true },
         })
       : [];
@@ -176,6 +215,9 @@ export class MetricsService {
     const reportCurrency = tenant?.reportCurrency ?? 'USD';
     const fromD = new Date(`${range.from}T00:00:00.000Z`);
     const toD = new Date(`${range.to}T23:59:59.999Z`);
+    const { metaFloor, crmFloor } = await this.connectionFloors(tenantId);
+    const spendFrom = laterOf(fromD, metaFloor);
+    const leadFrom = laterOf(fromD, crmFloor);
     const fx = await this.loadFx();
     const convert = (amount: number, from: string) =>
       from === reportCurrency ? amount : amount * (fx.get(`${from}>${reportCurrency}`) ?? 1);
@@ -192,7 +234,7 @@ export class MetricsService {
 
     // leads → cohort week (earliest lead per contact defines its vintage)
     const leads = await this.db.$base.lead.findMany({
-      where: { tenantId, matchStatus: 'MATCHED', createdAt: { gte: fromD, lte: toD } },
+      where: { tenantId, matchStatus: 'MATCHED', createdAt: { gte: leadFrom, lte: toD } },
       select: { contactId: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -206,7 +248,11 @@ export class MetricsService {
     const contactIds = [...contactWeek.keys()];
     const deals = contactIds.length
       ? await this.db.$base.deal.findMany({
-          where: { tenantId, contactId: { in: contactIds } },
+          where: {
+            tenantId,
+            contactId: { in: contactIds },
+            createdAt: crmFloor ? { gte: crmFloor } : undefined,
+          },
           select: { contactId: true, canonical: true, amount: true, currency: true },
         })
       : [];
@@ -234,7 +280,7 @@ export class MetricsService {
 
     // spend per cohort week
     const insights = await this.db.$base.adInsightDaily.findMany({
-      where: { tenantId, date: { gte: fromD, lte: toD } },
+      where: { tenantId, date: { gte: spendFrom, lte: toD } },
       select: { date: true, spend: true, currency: true },
     });
     for (const ins of insights) {
@@ -339,6 +385,7 @@ export class MetricsService {
       name: a.name,
       parentId: a.parentId,
       status: a.status,
+      effectiveStatus: a.effectiveStatus,
       currency,
       spend: round(a.spend),
       impressions: a.impressions,
@@ -349,6 +396,23 @@ export class MetricsService {
       revenue: round(a.revenue),
       ...deriveMetrics(a),
     };
+  }
+
+  /**
+   * Per-platform "data starts here" floors: the earliest Meta ad-account connect date (spend) and
+   * the earliest CRM connect date (leads/deals). Anything dated before these is pre-connection
+   * history the user never wants in reports. `null` = that platform isn't connected → no floor.
+   */
+  private async connectionFloors(
+    tenantId: string,
+  ): Promise<{ metaFloor: Date | null; crmFloor: Date | null }> {
+    const [ad, crm] = await Promise.all([
+      this.db.$base.adAccount.aggregate({ where: { tenantId }, _min: { createdAt: true } }),
+      this.db.$base.crmConnection.aggregate({ where: { tenantId }, _min: { createdAt: true } }),
+    ]);
+    // Floor to the connect DAY (UTC midnight): spend is day-granular (@db.Date), so a same-day
+    // connection must still include that day's data rather than its exact wall-clock moment.
+    return { metaFloor: dayStart(ad._min.createdAt), crmFloor: dayStart(crm._min.createdAt) };
   }
 
   private async loadFx(): Promise<Map<string, number>> {
@@ -364,6 +428,14 @@ export class MetricsService {
 
 function zero() {
   return { spend: 0, impressions: 0, clicks: 0, leads: 0, qualifiedLeads: 0, sales: 0, revenue: 0 };
+}
+/** The later of a range start and a (nullable) connection floor — the effective query lower bound. */
+function laterOf(rangeStart: Date, floor: Date | null): Date {
+  return floor && floor > rangeStart ? floor : rangeStart;
+}
+/** UTC midnight of the given day, or null. Keeps connection floors day-granular. */
+function dayStart(d: Date | null | undefined): Date | null {
+  return d ? new Date(`${d.toISOString().slice(0, 10)}T00:00:00.000Z`) : null;
 }
 function round(n: number) {
   return Math.round(n * 100) / 100;

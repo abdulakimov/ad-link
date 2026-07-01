@@ -1,29 +1,77 @@
 'use client';
 
+import { Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useT } from '@/components/i18n-provider';
+import { api } from '@/lib/api';
+import { setToken } from '@/lib/session';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-const TG_BOT_ID = process.env.NEXT_PUBLIC_TELEGRAM_BOT_ID;
-
-declare global {
-  interface Window {
-    Telegram?: {
-      Login: {
-        auth: (
-          opts: { bot_id: string; request_access?: string },
-          callback: (user: Record<string, string> | false) => void,
-        ) => void;
-      };
-    };
-  }
-}
+const TG_BOT = process.env.NEXT_PUBLIC_TELEGRAM_BOT;
 
 const btn =
-  'flex h-10 w-full items-center justify-center gap-2 rounded-md border border-input bg-background text-sm font-medium transition-colors hover:bg-accent';
+  'flex h-10 w-full items-center justify-center gap-2 rounded-md border border-input bg-background text-sm font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60';
 
 /** Social sign-in: an "or" divider, then Google + Telegram side by side. */
 export function SocialAuth() {
   const t = useT();
+  const router = useRouter();
+  const [tgPending, setTgPending] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stop = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+  }, []);
+
+  // never leave the poll running after the page unmounts
+  useEffect(() => stop, [stop]);
+
+  /**
+   * Telegram sign-in via our bot (not the phone-number OAuth widget): open a QR-login session,
+   * deep-link the user into @{bot}?start={qrId}, and poll until they tap Start in the chat — the
+   * bot then approves the session server-side and we receive the JWT on the next poll.
+   */
+  const startTelegram = useCallback(async () => {
+    if (tgPending) return;
+    stop();
+    setTgPending(true);
+    try {
+      const { qrId, secret, expiresIn } = await api.qrStart();
+      // opens Telegram (Desktop/Web/app); pressing Start in the chat confirms this session
+      window.open(`https://t.me/${TG_BOT}?start=${qrId}`, '_blank', 'noopener,noreferrer');
+      toast.info(t('auth.telegramConfirm'));
+
+      const deadline = Date.now() + expiresIn * 1000;
+      pollRef.current = setInterval(async () => {
+        if (Date.now() > deadline) {
+          stop();
+          setTgPending(false);
+          return;
+        }
+        try {
+          const res = await api.qrStatus(qrId, secret);
+          if (res.status === 'approved' && res.token) {
+            stop();
+            setToken(res.token);
+            router.push('/overview');
+          } else if (res.status === 'expired') {
+            stop();
+            setTgPending(false);
+          }
+        } catch {
+          // transient — keep polling until the deadline
+        }
+      }, 2000);
+    } catch {
+      stop();
+      setTgPending(false);
+      toast.error(t('auth.socialFailed'));
+    }
+  }, [router, t, tgPending, stop]);
+
   return (
     <div className="mt-6 space-y-3">
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -38,44 +86,24 @@ export function SocialAuth() {
           Google
         </a>
 
-        {TG_BOT_ID && (
-          <button type="button" onClick={telegramLogin} className={btn}>
-            <TelegramIcon />
-            Telegram
+        {TG_BOT && (
+          <button type="button" onClick={startTelegram} disabled={tgPending} className={btn}>
+            {tgPending ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                {t('auth.telegramWaiting')}
+              </>
+            ) : (
+              <>
+                <TelegramIcon />
+                Telegram
+              </>
+            )}
           </button>
         )}
       </div>
     </div>
   );
-}
-
-// Loads the widget script on demand, then opens Telegram's auth popup. Avoids embedding
-// the inline iframe (which renders "Bot domain invalid" before the domain is configured).
-function telegramLogin() {
-  loadTelegramScript().then(() => {
-    window.Telegram?.Login.auth({ bot_id: TG_BOT_ID as string, request_access: 'write' }, (user) => {
-      if (!user) return;
-      const q = new URLSearchParams(user).toString();
-      window.location.href = `${API}/auth/telegram/callback?${q}`;
-    });
-  });
-}
-
-function loadTelegramScript(): Promise<void> {
-  return new Promise((resolve) => {
-    if (window.Telegram?.Login) return resolve();
-    const existing = document.getElementById('tg-widget-script') as HTMLScriptElement | null;
-    if (existing) {
-      existing.addEventListener('load', () => resolve(), { once: true });
-      return;
-    }
-    const s = document.createElement('script');
-    s.id = 'tg-widget-script';
-    s.src = 'https://telegram.org/js/telegram-widget.js?22';
-    s.async = true;
-    s.addEventListener('load', () => resolve(), { once: true });
-    document.body.appendChild(s);
-  });
 }
 
 function GoogleIcon() {

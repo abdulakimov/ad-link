@@ -1,0 +1,11 @@
+# Production override — REPLACES the dev host-port mappings (`!override`) so we
+# bind only the adlink-specific loopback ports and never clash with the other
+# services already running on this shared VPS (5432-5435 and 6379/6380 are taken).
+# Use:  docker compose -p adlink -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  postgres:
+    ports: !override
+      - '127.0.0.1:5470:5432'
+  redis:
+    ports: !override
+      - '127.0.0.1:6390:6379'

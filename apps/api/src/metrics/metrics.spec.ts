@@ -16,7 +16,8 @@ describe('MetricsService', () => {
     tenantId = tenant.id;
     const client = await db.$base.client.create({ data: { tenantId, name: 'c' } });
     const acc = await db.$base.adAccount.create({
-      data: { tenantId, clientId: client.id, externalId: 'act', currency: 'USD', timezone: 'UTC', tokenRef: 'x' },
+      // connected well before the seeded data so the connection-date floor includes it
+      data: { tenantId, clientId: client.id, externalId: 'act', currency: 'USD', timezone: 'UTC', tokenRef: 'x', createdAt: d('2026-06-01') },
     });
     const campaign = await db.$base.campaign.create({ data: { tenantId, adAccountId: acc.id, externalId: 'C1', name: 'Camp' } });
     const adSet = await db.$base.adSet.create({ data: { tenantId, campaignId: campaign.id, externalId: 'S1', name: 'Set' } });
@@ -88,5 +89,70 @@ describe('MetricsService', () => {
     expect(totalLeads).toBe(3);
     expect(totalRevenue).toBe(400);
     expect(totalSales).toBe(1);
+  });
+});
+
+describe('MetricsService — connection-date floor', () => {
+  let tenantId = '';
+  let adId = '';
+  const CONNECT = d('2026-06-10'); // Meta + CRM connected this day; data before it must be ignored
+
+  beforeAll(async () => {
+    const tenant = await db.$base.tenant.create({ data: { name: 'floor-test', reportCurrency: 'USD' } });
+    tenantId = tenant.id;
+    const client = await db.$base.client.create({ data: { tenantId, name: 'c' } });
+    const acc = await db.$base.adAccount.create({
+      data: { tenantId, clientId: client.id, externalId: 'fact', currency: 'USD', timezone: 'UTC', tokenRef: 'x', createdAt: CONNECT },
+    });
+    await db.$base.crmConnection.create({
+      data: { tenantId, clientId: client.id, provider: 'BITRIX24', externalRef: 'fp', authRef: 'x', createdAt: CONNECT },
+    });
+    const campaign = await db.$base.campaign.create({ data: { tenantId, adAccountId: acc.id, externalId: 'FC', name: 'Camp' } });
+    const adSet = await db.$base.adSet.create({ data: { tenantId, campaignId: campaign.id, externalId: 'FS', name: 'Set' } });
+    const ad = await db.$base.ad.create({ data: { tenantId, adSetId: adSet.id, externalId: 'FA', name: 'Ad' } });
+    adId = ad.id;
+
+    // spend before (06-05) and after (06-15) connection
+    await db.$base.adInsightDaily.createMany({
+      data: [
+        { tenantId, adId: ad.id, date: d('2026-06-05'), spend: 100, currency: 'USD', impressions: 1000, clicks: 50 },
+        { tenantId, adId: ad.id, date: d('2026-06-15'), spend: 30, currency: 'USD', impressions: 300, clicks: 10 },
+      ],
+    });
+
+    // pre-connection contact (lead + won deal both created 06-05) — must NOT count
+    const cPre = await db.$base.contact.create({ data: { tenantId, name: 'Pre' } });
+    await db.$base.lead.create({ data: { tenantId, source: 'CRM', externalId: 'PreL', adId: ad.id, contactId: cPre.id, matchStatus: 'MATCHED', createdAt: d('2026-06-05') } });
+    await db.$base.deal.create({ data: { tenantId, externalId: 'PreD', contactId: cPre.id, stageExternalId: 'won', canonical: 'WON', amount: 200, currency: 'USD', createdAt: d('2026-06-05') } });
+
+    // post-connection contact (lead + won deal both created 06-15) — must count
+    const cPost = await db.$base.contact.create({ data: { tenantId, name: 'Post' } });
+    await db.$base.lead.create({ data: { tenantId, source: 'CRM', externalId: 'PostL', adId: ad.id, contactId: cPost.id, matchStatus: 'MATCHED', createdAt: d('2026-06-15') } });
+    await db.$base.deal.create({ data: { tenantId, externalId: 'PostD', contactId: cPost.id, stageExternalId: 'won', canonical: 'WON', amount: 50, currency: 'USD', createdAt: d('2026-06-15') } });
+  });
+
+  afterAll(async () => {
+    await db.$base.deal.deleteMany({ where: { tenantId } });
+    await db.$base.lead.deleteMany({ where: { tenantId } });
+    await db.$base.contact.deleteMany({ where: { tenantId } });
+    await db.$base.crmConnection.deleteMany({ where: { tenantId } });
+    await db.$base.client.deleteMany({ where: { tenantId } });
+    await db.$base.tenant.delete({ where: { id: tenantId } });
+  });
+
+  const range = { from: '2026-06-01', to: '2026-06-30' };
+
+  it('performance excludes pre-connection spend, leads and revenue', async () => {
+    const { rows } = await service.performance(tenantId, range, 'LAST_TOUCH');
+    const ad = rows.find((r) => r.id === adId)!;
+    // only the 06-15 rows survive the connection floor (06-10)
+    expect(ad).toMatchObject({ spend: 30, leads: 1, sales: 1, revenue: 50 });
+  });
+
+  it('cohorts exclude pre-connection rows', async () => {
+    const { cohorts } = await service.cohorts(tenantId, range);
+    expect(cohorts.reduce((s, c) => s + c.leads, 0)).toBe(1);
+    expect(cohorts.reduce((s, c) => s + c.spend, 0)).toBe(30);
+    expect(cohorts.reduce((s, c) => s + c.revenue, 0)).toBe(50);
   });
 });

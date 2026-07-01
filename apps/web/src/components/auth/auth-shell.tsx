@@ -22,7 +22,15 @@ const BAND_BG: Record<string, string> = {
  * World-class split-screen auth layout: an animated brand/visual panel on the left
  * (lg+), the form on the right. Shared by /login and /register.
  */
-export function AuthShell({ children }: { children: React.ReactNode }) {
+export function AuthShell({
+  children,
+  aside,
+}: {
+  children: React.ReactNode;
+  // optional side panel (e.g. QR sign-in): sits beside the form on lg+, stacks below on mobile,
+  // and widens the card so the page doesn't grow too tall.
+  aside?: React.ReactNode;
+}) {
   const t = useT();
   const band = roasBand(SHOWCASE.roas) ?? 'healthy';
   const features: Array<{ icon: LucideIcon; title: string; desc: string }> = [
@@ -127,7 +135,12 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 
       {/* ---- Right: form (same background, sits on a glass card) ---- */}
       <section className="relative z-10 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md rounded-2xl border border-border bg-card/70 p-8 shadow-2xl shadow-black/10 backdrop-blur-xl auth-rise dark:shadow-black/40">
+        <div
+          className={cn(
+            'w-full rounded-2xl border border-border bg-card/70 p-8 shadow-2xl shadow-black/10 backdrop-blur-xl auth-rise dark:shadow-black/40',
+            aside ? 'max-w-3xl' : 'max-w-md',
+          )}
+        >
           {/* mobile brand mark (left panel hidden) */}
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <span className="grid size-9 place-items-center rounded-md bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white shadow-lg">
@@ -135,7 +148,14 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
             </span>
             <span className="text-lg font-semibold tracking-tight">{t('app.name')}</span>
           </div>
-          {children}
+          {aside ? (
+            <div className="grid gap-10 lg:grid-cols-2 lg:items-center lg:gap-0 lg:divide-x lg:divide-border">
+              <div className="lg:pr-12">{children}</div>
+              <div className="lg:pl-12">{aside}</div>
+            </div>
+          ) : (
+            children
+          )}
         </div>
       </section>
     </main>

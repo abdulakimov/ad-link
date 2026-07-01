@@ -24,8 +24,18 @@ export class CrmSyncService {
     private readonly matching: MatchingService,
   ) {}
 
-  async sync(connector: CrmConnector, conn: CrmRef, tenantId: string, since = new Date(0)) {
+  async sync(
+    connector: CrmConnector,
+    conn: CrmRef,
+    tenantId: string,
+    since = new Date(0),
+    floor?: Date,
+  ) {
     const run = await this.syncRun.start(tenantId, 'crm_sync');
+    // Pre-connection leads/deals are never stored (PLAN). Day-granular so the connect day counts.
+    // Contacts are NOT gated — a post-connection deal may reference an earlier-created contact.
+    const floorDay = floor ? new Date(`${floor.toISOString().slice(0, 10)}T00:00:00.000Z`) : null;
+    const before = (createdAt: string) => floorDay !== null && new Date(createdAt) < floorDay;
     await this.db.$base.crmConnection
       .update({ where: { id: conn.id }, data: { syncState: 'RUNNING' } })
       .catch(() => undefined);
@@ -40,7 +50,12 @@ export class CrmSyncService {
       }
 
       const rawLeads = await connector.fetchLeads(conn, since);
-      for (const l of rawLeads) await this.upsertLead(tenantId, l);
+      let storedLeads = 0;
+      for (const l of rawLeads) {
+        if (before(l.createdAt)) continue;
+        await this.upsertLead(tenantId, l);
+        storedLeads++;
+      }
 
       // Stage history → a deal counts as qualified/won if it was *ever* in such a stage.
       const histByDeal = new Map<string, Set<string>>();
@@ -53,13 +68,16 @@ export class CrmSyncService {
       }
 
       const rawDeals = await connector.fetchDeals(conn, since);
+      let storedDeals = 0;
       for (const d of rawDeals) {
+        if (before(d.createdAt)) continue;
         const stages = [...new Set([d.stageExternalId, ...(histByDeal.get(d.externalId) ?? [])])];
         const canonical = rollupCanonical(stages, mappings, d.stageExternalId);
         const contactId = d.contactExternalId
           ? (contactByExternal.get(d.contactExternalId) ?? null)
           : null;
         await this.upsertDeal(tenantId, d, canonical, contactId, stages);
+        storedDeals++;
       }
 
       // Attribute freshly-ingested leads to ads (leadgen/utm/contact-dedup signals).
@@ -71,7 +89,7 @@ export class CrmSyncService {
       });
       await this.syncRun.finish(run.id, 'OK');
       this.logger.log(
-        `crm sync ok: ${rawDeals.length} deals, ${rawLeads.length} leads, matched ${m.matched}/${m.processed}`,
+        `crm sync ok: ${storedDeals} deals, ${storedLeads} leads, matched ${m.matched}/${m.processed}`,
       );
     } catch (err) {
       await this.syncRun.finish(run.id, 'FAILED', err instanceof Error ? err.message : String(err));

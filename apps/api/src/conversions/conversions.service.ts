@@ -38,9 +38,19 @@ export class ConversionsService {
     const adIds = [...accountByAd.keys()];
     if (adIds.length === 0) return { created: 0 };
 
+    // Never feed pre-connection outcomes back to Meta — floor at the CRM connect date.
+    const crm = await this.db.$base.crmConnection.aggregate({ where: { tenantId }, _min: { createdAt: true } });
+    const crmFloor = crm._min.createdAt ?? null;
+
     // last-touch lead per contact (among opt-in ads)
     const leads = await this.db.$base.lead.findMany({
-      where: { tenantId, adId: { in: adIds }, matchStatus: 'MATCHED', contactId: { not: null } },
+      where: {
+        tenantId,
+        adId: { in: adIds },
+        matchStatus: 'MATCHED',
+        contactId: { not: null },
+        createdAt: crmFloor ? { gte: crmFloor } : undefined,
+      },
       select: { id: true, adId: true, leadgenId: true, contactId: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -52,7 +62,11 @@ export class ConversionsService {
     const contactIds = [...contactLead.keys()];
     const deals = contactIds.length
       ? await this.db.$base.deal.findMany({
-          where: { tenantId, contactId: { in: contactIds } },
+          where: {
+            tenantId,
+            contactId: { in: contactIds },
+            createdAt: crmFloor ? { gte: crmFloor } : undefined,
+          },
           select: { id: true, contactId: true, canonical: true, amount: true, currency: true },
         })
       : [];

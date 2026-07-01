@@ -122,7 +122,9 @@ model User {
   email        String   @unique
   passwordHash String
   name         String?
+  username      String? // Telegram @username (or a generated handle) — display identity for social users
   avatarUrl    String? // profile picture from Google/Telegram social login
+  tgPhotoFileId String? // Telegram file_id of the profile photo; streamed via the avatar proxy
   role         Role     @default(BUYER)
   clientId     String? // CLIENT role is scoped to one client
   createdAt    DateTime @default(now())
@@ -204,42 +206,45 @@ model Campaign {
   tenantId    String
   adAccountId String
   adAccount   AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
-  externalId  String
-  name        String
-  status      String?
-  adSets      AdSet[]
+  externalId      String
+  name            String
+  status          String?
+  effectiveStatus String?
+  adSets          AdSet[]
 
   @@unique([adAccountId, externalId])
   @@index([tenantId])
 }
 
 model AdSet {
-  id         String   @id @default(cuid())
-  tenantId   String
-  campaignId String
-  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  externalId String
-  name       String
-  status     String?
-  ads        Ad[]
+  id              String   @id @default(cuid())
+  tenantId        String
+  campaignId      String
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  externalId      String
+  name            String
+  status          String?
+  effectiveStatus String?
+  ads             Ad[]
 
   @@unique([campaignId, externalId])
   @@index([tenantId])
 }
 
 model Ad {
-  id          String           @id @default(cuid())
-  tenantId    String
-  adSetId     String
-  adSet       AdSet            @relation(fields: [adSetId], references: [id], onDelete: Cascade)
-  externalId  String
-  name        String
-  status      String?
-  creativeId  String?
-  creative    Creative?        @relation(fields: [creativeId], references: [id])
-  insights    AdInsightDaily[]
-  leads       Lead[]
-  touchPoints TouchPoint[]
+  id              String           @id @default(cuid())
+  tenantId        String
+  adSetId         String
+  adSet           AdSet            @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  externalId      String
+  name            String
+  status          String?
+  effectiveStatus String?
+  creativeId      String?
+  creative        Creative?        @relation(fields: [creativeId], references: [id])
+  insights        AdInsightDaily[]
+  leads           Lead[]
+  touchPoints     TouchPoint[]
 
   @@unique([adSetId, externalId])
   @@index([tenantId])

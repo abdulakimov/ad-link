@@ -4,7 +4,7 @@ import uz from './messages/uz.json';
 
 export const locales = ['en', 'ru', 'uz'] as const;
 export type Locale = (typeof locales)[number];
-export const defaultLocale: Locale = 'en';
+export const defaultLocale: Locale = 'uz';
 
 export const dictionaries = { en, ru, uz } as const;
 export type Dictionary = typeof en;

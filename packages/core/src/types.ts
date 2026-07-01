@@ -47,18 +47,22 @@ export interface RawCampaign {
   externalId: string;
   name: string;
   status?: string;
+  /** Provider's actual delivery state (e.g. Meta's effective_status: WITH_ISSUES, PENDING_BILLING_INFO), distinct from the on/off toggle in `status`. */
+  effectiveStatus?: string;
   adSets: RawAdSet[];
 }
 export interface RawAdSet {
   externalId: string;
   name: string;
   status?: string;
+  effectiveStatus?: string;
   ads: RawAd[];
 }
 export interface RawAd {
   externalId: string;
   name: string;
   status?: string;
+  effectiveStatus?: string;
   creativeExternalId?: string;
   creativeName?: string;
 }
@@ -165,6 +169,8 @@ export interface MetricRow {
   name: string;
   parentId: string | null;
   status?: string | null;
+  /** Provider's actual delivery state, distinct from the on/off toggle in `status` (e.g. Meta's effective_status). */
+  effectiveStatus?: string | null;
   /** report currency (per-tenant); raw native values live in the DB */
   currency: string;
   spend: number;

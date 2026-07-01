@@ -15,6 +15,13 @@ async function bootstrap() {
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
 
+  // Behind a shared nginx, the API is served under a path prefix (e.g. `api`) so
+  // it can share one domain with the web app. Opt-in via env; dev stays at root.
+  const globalPrefix = process.env.API_GLOBAL_PREFIX?.trim();
+  if (globalPrefix) {
+    app.setGlobalPrefix(globalPrefix);
+  }
+
   app.enableCors({
     origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000',
     credentials: true,

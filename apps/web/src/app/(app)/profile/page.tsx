@@ -16,8 +16,10 @@ export default function ProfilePage() {
   });
 
   if (!user) return null;
-  const name = user.name ?? user.email;
+  const name = user.name ?? user.username ?? user.email;
   const initial = name.charAt(0).toUpperCase();
+  // prefer the @handle; fall back to email for password/Google accounts (hides synthetic tg emails)
+  const handle = user.username ? `@${user.username}` : user.email;
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
@@ -41,7 +43,7 @@ export default function ProfilePage() {
             )}
             <div className="min-w-0">
               <CardTitle className="truncate">{name}</CardTitle>
-              <div className="truncate text-sm text-muted-foreground">{user.email}</div>
+              <div className="truncate text-sm text-muted-foreground">{handle}</div>
             </div>
           </div>
         </CardHeader>

@@ -127,6 +127,63 @@ export class AuthService {
     return this.issue(await this.findOrCreateUser(email, name, fields.photo_url));
   }
 
+  /**
+   * Log in from a Telegram profile obtained over a trusted channel (the bot's getUpdates),
+   * so no widget HMAC is needed. Used by the QR-login flow. Returns { token, user }.
+   * Stores the @username (or a generated handle) and the profile-photo file_id, which the
+   * avatar proxy endpoint streams without ever exposing the bot token to the browser.
+   */
+  async loginTelegramProfile(p: {
+    id: string | number;
+    first_name?: string | null;
+    last_name?: string | null;
+    username?: string | null;
+    photoFileId?: string | null;
+  }) {
+    const name =
+      [p.first_name, p.last_name].filter(Boolean).join(' ') || p.username || `tg${p.id}`;
+    const username = p.username?.trim() || generateUsername(name, p.id);
+    // Telegram never provides an email → deterministic synthetic address for find-or-create.
+    const email = `tg${p.id}@telegram.adlink`;
+    return this.issue(await this.upsertTelegramUser(email, name, username, p.photoFileId ?? null));
+  }
+
+  /** Find-or-create a Telegram user, refreshing the handle + profile photo on every login. */
+  private async upsertTelegramUser(
+    email: string,
+    name: string,
+    username: string,
+    photoFileId: string | null,
+  ): Promise<User> {
+    let user = await this.db.user.findUnique({ where: { email } });
+    if (!user) {
+      const tenant = await this.db.tenant.create({ data: { name: `${name}'s workspace` } });
+      user = await this.db.user.create({
+        data: {
+          tenantId: tenant.id,
+          email,
+          passwordHash: await bcrypt.hash(randomUUID(), 10),
+          name,
+          username,
+          role: Role.OWNER,
+        },
+      });
+    }
+    // avatarUrl points at our own proxy (same origin in prod, behind nginx /api) so the
+    // browser never sees the bot token. Falls back to any existing avatar if no photo.
+    const avatarUrl = photoFileId ? `/api/auth/telegram/avatar/${user.id}` : user.avatarUrl;
+    return this.db.user.update({
+      where: { id: user.id },
+      data: { username, avatarUrl, tgPhotoFileId: photoFileId ?? user.tgPhotoFileId },
+    });
+  }
+
+  /** The Telegram profile-photo file_id for a user — used by the avatar proxy. */
+  async telegramPhotoFileId(userId: string): Promise<string | null> {
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    return user?.tgPhotoFileId ?? null;
+  }
+
   /** Find a user by email, or provision a brand-new tenant + OWNER for social sign-up. */
   private async findOrCreateUser(
     email: string,
@@ -178,12 +235,24 @@ export class AuthService {
       id: u.id,
       email: u.email,
       name: u.name,
+      username: u.username,
       avatarUrl: u.avatarUrl,
       role: u.role,
       tenantId: u.tenantId,
       clientId: u.clientId,
     };
   }
+}
+
+/** Build a handle from a display name (e.g. "Xurshidbek Abdulakimov" → "xurshidbek_abdulakimov"). */
+function generateUsername(name: string, id: string | number): string {
+  const slug = name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24);
+  return slug || `tg_${id}`;
 }
 
 /** Decode (not verify) a JWT payload — safe only for tokens received over a trusted channel. */

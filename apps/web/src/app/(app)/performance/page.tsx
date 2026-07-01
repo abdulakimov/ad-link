@@ -13,6 +13,7 @@ import { ArrowDown, ArrowUp, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  deriveMetrics,
   formatCurrency,
   formatNumber,
   formatRoas,
@@ -30,6 +31,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -82,6 +84,26 @@ export default function PerformancePage() {
     if (statusFilter === 'ALL') return rows;
     return rows.filter((r) => (r.status === 'ACTIVE') === (statusFilter === 'ACTIVE'));
   }, [current, childrenOf, roots, statusFilter]);
+
+  const levelLabel = !current ? 'campaigns' : current.level === 'campaign' ? 'ad sets' : 'ads';
+
+  // Totals footer (Ads Manager-style "Results from N campaigns" summary row).
+  const totals = useMemo(() => {
+    const sums = visibleRows.reduce(
+      (acc, r) => {
+        acc.spend += r.spend;
+        acc.impressions += r.impressions;
+        acc.clicks += r.clicks;
+        acc.leads += r.leads;
+        acc.qualifiedLeads += r.qualifiedLeads;
+        acc.sales += r.sales;
+        acc.revenue += r.revenue;
+        return acc;
+      },
+      { spend: 0, impressions: 0, clicks: 0, leads: 0, qualifiedLeads: 0, sales: 0, revenue: 0 },
+    );
+    return { ...sums, ...deriveMetrics(sums) };
+  }, [visibleRows]);
 
   const columns = useMemo<ColumnDef<MetricRow>[]>(
     () => [
@@ -210,24 +232,25 @@ export default function PerformancePage() {
         </nav>
       )}
 
-      <div className="overflow-hidden rounded-lg bg-card shadow-sm">
+      <div className="rounded-lg bg-card shadow-sm">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
               <TableRow key={hg.id} className="border-b bg-secondary hover:bg-secondary">
                 {hg.headers.map((h) => {
                   const sorted = h.column.getIsSorted(); // 'asc' | 'desc' | false
-                  const right = h.column.id !== 'name';
+                  const isName = h.column.id === 'name';
                   return (
                     <TableHead
                       key={h.id}
                       onClick={h.column.getToggleSortingHandler()}
                       className={cn(
-                        'cursor-pointer select-none transition-colors hover:bg-primary/5',
+                        'sticky top-14 cursor-pointer select-none bg-secondary transition-colors hover:bg-primary/5',
+                        isName ? 'z-30 left-0' : 'z-10',
                         sorted && 'bg-primary/10',
                       )}
                     >
-                      <span className={cn('flex items-center gap-1', right ? 'justify-end' : 'justify-start')}>
+                      <span className={cn('flex items-center gap-1', isName ? 'justify-start' : 'justify-end')}>
                         {h.isPlaceholder
                           ? null
                           : flexRender(h.column.columnDef.header, h.getContext())}
@@ -268,13 +291,13 @@ export default function PerformancePage() {
                 <TableRow
                   key={row.id}
                   onClick={drill ? () => setPath((p) => [...p, row.original]) : undefined}
-                  className={cn(drill && 'cursor-pointer')}
+                  className={cn('group', drill && 'cursor-pointer')}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
                       className={cn(
-                        cell.column.id === 'name' && '',
+                        cell.column.id === 'name' && 'sticky left-0 z-20 bg-card group-hover:bg-muted/50',
                         cell.column.id === 'delivery' && 'text-right',
                         cell.column.id !== 'name' && cell.column.id !== 'delivery' && 'text-right font-mono',
                       )}
@@ -286,6 +309,43 @@ export default function PerformancePage() {
               );
             })}
           </TableBody>
+          {!isLoading && !error && visibleRows.length > 0 && (
+            <TableFooter>
+              <TableRow className="border-t bg-muted/50 hover:bg-muted/50">
+                <TableCell className="sticky bottom-0 left-0 z-30 bg-muted/50 font-medium">
+                  Results from {visibleRows.length} {levelLabel}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50" />
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatCurrency(totals.spend, currency)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatNumber(totals.leads)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatNumber(totals.qualifiedLeads)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatCurrency(totals.cpl, currency)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatCurrency(totals.costPerQl, currency)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatNumber(totals.sales)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatCurrency(totals.cac, currency)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatCurrency(totals.revenue, currency)}
+                </TableCell>
+                <TableCell className="sticky bottom-0 z-10 bg-muted/50 text-right font-mono">
+                  {formatRoas(totals.roas)}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          )}
         </Table>
       </div>
     </main>
